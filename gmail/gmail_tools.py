@@ -10,6 +10,8 @@ import base64
 from typing import Optional, List, Dict, Literal
 
 from email.mime.text import MIMEText
+import re
+from email.mime.multipart import MIMEMultipart
 
 from mcp import types
 from fastapi import Body
@@ -724,3 +726,152 @@ async def modify_gmail_message_labels(
         actions.append(f"Removed labels: {', '.join(remove_label_ids)}")
 
     return f"Message labels updated successfully!\nMessage ID: {message_id}\n{'; '.join(actions)}"
+
+
+def _prepare_reply_subject(subject: str) -> str:
+    """
+    Prepare the subject line for a reply email.
+    Adds 'Re: ' prefix if not already present (case-insensitive).
+
+    Args:
+        subject (str): Original email subject.
+
+    Returns:
+        str: Prepared reply subject.
+    """
+    if subject is None:
+        return "Re: (no subject)"
+    if re.match(r"(?i)^re:\s", subject):
+        return subject
+    return f"Re: {subject}"
+
+
+def _quote_original_message(original_body: str) -> str:
+    """
+    Quote the original message body for inclusion in a reply.
+    Prefixes each line with '> '.
+
+    Args:
+        original_body (str): The original message body.
+
+    Returns:
+        str: Quoted message body.
+    """
+    if not original_body:
+        return ""
+    quoted_lines = [f"> {line}" for line in original_body.splitlines()]
+    return "\n".join(quoted_lines)
+
+
+@server.tool()
+@require_google_service("gmail", GMAIL_SEND_SCOPE)
+@handle_http_errors("reply_to_gmail_message")
+async def reply_to_gmail_message(
+    service,
+    user_google_email: str,
+    message_id: str = Body(..., description="ID of the message to reply to."),
+    body: str = Body(..., description="Reply body (plain text)."),
+) -> str:
+    """
+    Sends a reply to a specific Gmail message.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        message_id (str): The ID of the message to reply to.
+        body (str): The reply body (plain text).
+
+    Returns:
+        str: Confirmation message with the sent reply's message ID.
+    """
+    logger.info(f"[reply_to_gmail_message] Invoked. Email: '{user_google_email}', Replying to Message ID: '{message_id}'")
+
+    # Fetch the original message to get headers and body for quoting
+    original_message = await asyncio.to_thread(
+        service.users().messages().get(userId="me", id=message_id, format="full").execute
+    )
+    payload = original_message.get("payload", {})
+    headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
+    original_subject = headers.get("Subject", "(no subject)")
+    original_from = headers.get("From", "(unknown sender)")
+    original_body = _extract_message_body(payload)
+
+    reply_subject = _prepare_reply_subject(original_subject)
+    quoted_body = _quote_original_message(original_body)
+
+    # Compose the reply message body
+    full_body = f"{body}\n\nOn {original_from} wrote:\n{quoted_body}"
+
+    # Create MIME message with In-Reply-To and References headers
+    message = MIMEMultipart()
+    message["to"] = original_from
+    message["subject"] = reply_subject
+    message["In-Reply-To"] = headers.get("Message-ID", "")
+    message["References"] = headers.get("Message-ID", "")
+    message.attach(MIMEText(full_body, "plain"))
+
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    send_body = {"raw": raw_message, "threadId": original_message.get("threadId")}
+
+    # Send the reply message
+    sent_message = await asyncio.to_thread(
+        service.users().messages().send(userId="me", body=send_body).execute
+    )
+    sent_message_id = sent_message.get("id")
+    return f"Reply sent! Message ID: {sent_message_id}"
+
+
+@server.tool()
+@require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
+@handle_http_errors("draft_gmail_reply")
+async def draft_gmail_reply(
+    service,
+    user_google_email: str,
+    message_id: str = Body(..., description="ID of the message to draft a reply for."),
+    body: str = Body(..., description="Reply body (plain text)."),
+) -> str:
+    """
+    Creates a draft reply to a specific Gmail message.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        message_id (str): The ID of the message to draft a reply for.
+        body (str): The reply body (plain text).
+
+    Returns:
+        str: Confirmation message with the created draft's ID.
+    """
+    logger.info(f"[draft_gmail_reply] Invoked. Email: '{user_google_email}', Drafting reply to Message ID: '{message_id}'")
+
+    # Fetch the original message to get headers and body for quoting
+    original_message = await asyncio.to_thread(
+        service.users().messages().get(userId="me", id=message_id, format="full").execute
+    )
+    payload = original_message.get("payload", {})
+    headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
+    original_subject = headers.get("Subject", "(no subject)")
+    original_from = headers.get("From", "(unknown sender)")
+    original_body = _extract_message_body(payload)
+
+    reply_subject = _prepare_reply_subject(original_subject)
+    quoted_body = _quote_original_message(original_body)
+
+    # Compose the reply message body
+    full_body = f"{body}\n\nOn {original_from} wrote:\n{quoted_body}"
+
+    # Create MIME message with In-Reply-To and References headers
+    message = MIMEMultipart()
+    message["to"] = original_from
+    message["subject"] = reply_subject
+    message["In-Reply-To"] = headers.get("Message-ID", "")
+    message["References"] = headers.get("Message-ID", "")
+    message.attach(MIMEText(full_body, "plain"))
+
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    draft_body = {"message": {"raw": raw_message, "threadId": original_message.get("threadId")}}
+
+    # Create the draft reply
+    created_draft = await asyncio.to_thread(
+        service.users().drafts().create(userId="me", body=draft_body).execute
+    )
+    draft_id = created_draft.get("id")
+    return f"Draft reply created! Draft ID: {draft_id}"
