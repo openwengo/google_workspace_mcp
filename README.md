@@ -44,7 +44,7 @@ A production-ready MCP server that integrates all major Google Workspace service
 - **🔐 Advanced OAuth 2.0**: Secure authentication with automatic token refresh, transport-aware callback handling, session management, and centralized scope management
 - **📅 Google Calendar**: Full calendar management with event CRUD operations
 - **📁 Google Drive**: File operations with native Microsoft Office format support (.docx, .xlsx)
-- **📧 Gmail**: Complete email management with search, send, and draft capabilities
+- **📧 Gmail**: Complete email management with search, send, draft, and reply capabilities
 - **📄 Google Docs**: Document operations including content extraction and creation
 - **📊 Google Sheets**: Comprehensive spreadsheet management with flexible cell operations
 - **🖼️ Google Slides**: Presentation management with slide creation, updates, and content manipulation
@@ -249,7 +249,18 @@ When calling a tool:
 | `list_docs_in_folder` | List docs in folder |
 | `create_doc` | Create new documents |
 
-### 📊 Google Sheets ([`sheets_tools.py`](gsheets/sheets_tools.py))
+### 📧 Gmail ([`gmail_tools.py`](gmail/gmail_tools.py))
+
+| Tool | Description |
+|------|-------------|
+| `search_gmail_messages` | Search with Gmail operators |
+| `get_gmail_message_content` | Retrieve message content |
+| `send_gmail_message` | Send emails |
+| `draft_gmail_message` | Create drafts |
+| `reply_to_gmail_message` | Send replies to Gmail messages with reply-to-all support |
+| `draft_gmail_reply` | Create draft replies to Gmail messages |
+
+### � Google Sheets ([`sheets_tools.py`](gsheets/sheets_tools.py))
 
 | Tool | Description |
 |------|-------------|
