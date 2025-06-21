@@ -18,7 +18,9 @@ dependencies = [
  "httpx>=0.28.1",
  "pyjwt>=2.10.1",
  "tomlkit",
+ "pyyaml>=6.0",
 ]
+
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -39,6 +41,11 @@ classifiers = [
     "Typing :: Typed"
 ]
 
+[project.optional-dependencies]
+cards = [
+ "python-card-framework==2.1.0",
+]
+
 [[project.authors]]
 name = "Taylor Wilsdon"
 email = "taylor@taylorwilsdon.com"
@@ -57,5 +64,5 @@ Changelog = "https://github.com/taylorwilsdon/google_workspace_mcp/releases"
 workspace-mcp = "main:main"
 
 [tool.setuptools]
-packages = [ "auth", "gcalendar", "core", "gdocs", "gdrive", "gmail", "gchat", "gsheets", "gforms", "gslides"]
+packages = [ "auth", "gcalendar", "core", "gdocs", "gdrive", "gmail", "gchat", "gsheets", "gforms", "gslides", "adapters"]
 py-modules = [ "main"]
