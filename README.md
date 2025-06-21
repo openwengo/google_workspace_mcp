@@ -41,18 +41,19 @@ A production-ready MCP server that integrates all major Google Workspace service
 
 ## ✨ Features
 
-- **🔐 Advanced OAuth 2.0**: Secure authentication with automatic token refresh, transport-aware callback handling, session management, and centralized scope management
-- **📅 Google Calendar**: Full calendar management with event CRUD operations
-- **📁 Google Drive**: File operations with native Microsoft Office format support (.docx, .xlsx)
-- **📧 Gmail**: Complete email management with search, send, draft, and reply capabilities
-- **📄 Google Docs**: Document operations including content extraction and creation
-- **📊 Google Sheets**: Comprehensive spreadsheet management with flexible cell operations
-- **🖼️ Google Slides**: Presentation management with slide creation, updates, and content manipulation
-- **📝 Google Forms**: Form creation, retrieval, publish settings, and response management
-- **💬 Google Chat**: Space management and messaging capabilities
+- **🔐 Advanced OAuth 2.0**: ContextVar-based authentication with request-scoped credential isolation, automatic token refresh, transport-aware callback handling, session management, and centralized scope management
+- **📅 Google Calendar**: Full calendar management with event CRUD operations ✅ **Tested**
+- **📁 Google Drive**: File operations with native Microsoft Office format support (.docx, .xlsx) ✅ **Tested**
+- **📧 Gmail**: Complete email management with search, send, draft, and reply capabilities ✅ **Tested**
+- **📄 Google Docs**: Document operations including content extraction and creation ✅ **Tested**
+- **📊 Google Sheets**: Comprehensive spreadsheet management with flexible cell operations ✅ **Tested**
+- **🖼️ Google Slides**: Presentation management with slide creation, updates, and content manipulation ✅ **Tested**
+- **📝 Google Forms**: Form creation, retrieval, publish settings, and response management ✅ **Tested**
+- **💬 Google Chat**: Space management and messaging capabilities ✅ **Tested**
 - **🔄 Multiple Transports**: HTTP with SSE fallback, OpenAPI compatibility via `mcpo`
-- **⚡ High Performance**: Service caching, thread-safe sessions, FastMCP integration
+- **⚡ High Performance**: Service caching, thread-safe sessions, FastMCP integration, request-scoped credential caching
 - **🧩 Developer Friendly**: Minimal boilerplate, automatic service injection, centralized configuration
+- **🔒 Enterprise Security**: Request-scoped credential isolation prevents cross-request contamination
 
 ---
 
@@ -235,10 +236,17 @@ When calling a tool:
 
 | Tool | Description |
 |------|-------------|
-| `search_gmail_messages` | Search with Gmail operators |
-| `get_gmail_message_content` | Retrieve message content |
-| `send_gmail_message` | Send emails |
-| `draft_gmail_message` | Create drafts |
+| `search_gmail_messages` | Search with Gmail operators, returns Message IDs and Thread IDs |
+| `get_gmail_message_content` | Retrieve full message content (subject, sender, body) |
+| `get_gmail_messages_content_batch` | Retrieve multiple messages in batch (up to 100) |
+| `send_gmail_message` | Send emails with plain text content |
+| `draft_gmail_message` | Create draft emails |
+| `get_gmail_thread_content` | Retrieve complete conversation thread content |
+| `list_gmail_labels` | List all Gmail labels (system and user-created) |
+| `manage_gmail_label` | Create, update, or delete Gmail labels |
+| `modify_gmail_message_labels` | Add or remove labels from messages |
+| `reply_to_gmail_message` | Send replies with proper threading and quoting |
+| `draft_gmail_reply` | Create draft replies with proper threading |
 
 ### 📝 Google Docs ([`docs_tools.py`](gdocs/docs_tools.py))
 
@@ -248,17 +256,6 @@ When calling a tool:
 | `get_doc_content` | Extract document text |
 | `list_docs_in_folder` | List docs in folder |
 | `create_doc` | Create new documents |
-
-### 📧 Gmail ([`gmail_tools.py`](gmail/gmail_tools.py))
-
-| Tool | Description |
-|------|-------------|
-| `search_gmail_messages` | Search with Gmail operators |
-| `get_gmail_message_content` | Retrieve message content |
-| `send_gmail_message` | Send emails |
-| `draft_gmail_message` | Create drafts |
-| `reply_to_gmail_message` | Send replies to Gmail messages with reply-to-all support |
-| `draft_gmail_reply` | Create draft replies to Gmail messages |
 
 ### � Google Sheets ([`sheets_tools.py`](gsheets/sheets_tools.py))
 
@@ -285,10 +282,30 @@ When calling a tool:
 
 | Tool | Description |
 |------|-------------|
-| `list_spaces` | List chat spaces/rooms |
-| `get_messages` | Retrieve space messages |
-| `send_message` | Send messages to spaces |
-| `search_messages` | Search across chat history |
+| `list_spaces` | List chat spaces/rooms with filtering by type |
+| `get_messages` | Retrieve messages from specific spaces |
+| `send_message` | Send text messages to spaces with threading support |
+| `search_messages` | Search messages across spaces or within specific space |
+| `send_card_message` | Send rich card messages using Card Framework |
+| `send_simple_card` | Send simple cards with title, text, and optional image |
+| `send_interactive_card` | Send cards with interactive buttons |
+| `send_form_card` | Send form cards with input fields |
+| `send_rich_card` | Send advanced cards with complex layouts and sections |
+| `get_card_framework_status` | Check Card Framework integration status |
+| `get_adapter_system_status` | Check adapter system integration status |
+| `list_available_card_types` | List all supported card types and descriptions |
+
+**Card Framework Integration**: Enhanced with Card Framework v2 support for rich interactive cards, with webhook delivery option to bypass Google Chat API restrictions for cards.
+
+### 🖼️ Google Slides ([`slides_tools.py`](gslides/slides_tools.py))
+
+| Tool | Description |
+|------|-------------|
+| `create_presentation` | Create new presentations |
+| `get_presentation` | Get presentation details and metadata |
+| `batch_update_presentation` | Apply batch updates to presentations |
+| `get_page` | Get details about specific slides |
+| `get_page_thumbnail` | Generate thumbnail URLs for slides |
 
 ---
 
@@ -321,21 +338,27 @@ async def your_new_tool(service, param1: str, param2: int = 10):
 
 ### Architecture Highlights
 
-- **Service Caching**: 30-minute TTL reduces authentication overhead
+- **ContextVar-based Authentication**: Request-scoped credential isolation with automatic session management
+- **Service Caching**: 30-minute TTL reduces authentication overhead with in-memory credential caching
 - **Scope Management**: Centralized in `SCOPE_GROUPS` for easy maintenance
-- **Error Handling**: Native exceptions instead of manual error construction
+- **Error Handling**: Native exceptions with user-friendly re-authentication guidance
 - **Multi-Service Support**: `@require_multiple_services()` for complex tools
+- **Request Isolation**: Prevents credential cross-contamination in concurrent multi-user scenarios
+- **Automatic Token Refresh**: Seamless handling of expired tokens with fallback to re-authentication
 
 ---
 
 ## 🔒 Security
 
+- **Request-Scoped Isolation**: ContextVar architecture ensures credentials are isolated per request, preventing cross-user contamination
+- **Session-Based Caching**: In-memory credential storage with automatic cleanup and 30-minute TTL
 - **Credentials**: Never commit `client_secret.json` or `.credentials/` directory
 - **OAuth Callback**: Uses `http://localhost:8000/oauth2callback` for development (requires `OAUTHLIB_INSECURE_TRANSPORT=1`)
 - **Transport-Aware Callbacks**: Stdio mode starts a minimal HTTP server only for OAuth, ensuring callbacks work in all modes
 - **Production**: Use HTTPS for callback URIs and configure accordingly
 - **Network Exposure**: Consider authentication when using `mcpo` over networks
 - **Scope Minimization**: Tools request only necessary permissions
+- **Automatic Token Refresh**: Secure handling of expired tokens with proper error messaging
 
 ---
 

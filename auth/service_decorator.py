@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from google.auth.exceptions import RefreshError
 from auth.google_auth import get_authenticated_google_service, GoogleAuthenticationError
+from auth.context import get_current_mcp_session_id, set_injected_oauth_credentials, get_injected_oauth_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,12 @@ def require_google_service(
                     if cache_enabled:
                         cache_key = _get_cache_key(user_google_email, service_name, service_version, resolved_scopes)
                         _cache_service(cache_key, service, actual_user_email)
+                    
+                    # Set credentials in context if service has credentials attribute
+                    if hasattr(service, '_http') and hasattr(service._http, 'credentials'):
+                        # Ensure credentials from the service are also set in the ContextVar
+                        set_injected_oauth_credentials(service._http.credentials)
+                        logger.debug(f"[{tool_name}] Set credentials from {service_name} service in ContextVar (object ID: {id(service._http.credentials) if service._http.credentials else 'None'})")
                 except GoogleAuthenticationError as e:
                     raise Exception(str(e))
 
@@ -341,6 +348,12 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
 
                     # Inject service with specified parameter name
                     kwargs[param_name] = service
+                    
+                    # Set credentials in context if service has credentials attribute
+                    if hasattr(service, '_http') and hasattr(service._http, 'credentials'):
+                        # Ensure credentials from the service are also set in the ContextVar
+                        set_injected_oauth_credentials(service._http.credentials)
+                        logger.debug(f"[{tool_name}] Multi-service decorator set credentials from {service_name} service in ContextVar (object ID: {id(service._http.credentials) if service._http.credentials else 'None'})")
 
                 except GoogleAuthenticationError as e:
                     raise Exception(str(e))

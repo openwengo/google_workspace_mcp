@@ -14,6 +14,12 @@ from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP, SCOPES
+from auth.context import (
+    get_current_mcp_session_id,
+    get_injected_oauth_credentials,
+    set_injected_oauth_credentials,
+    reset_injected_oauth_credentials
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -277,6 +283,11 @@ def handle_auth_callback(
         FlowExchangeError: If the code exchange fails.
         HttpError: If fetching user info fails.
     """
+    # If session_id is not explicitly passed, try to get it from ContextVar
+    if session_id is None:
+        session_id = get_current_mcp_session_id()
+        logger.debug(f"Retrieved session_id from context: {session_id}")
+    
     try:
         # Allow HTTP for localhost in development
         if 'OAUTHLIB_INSECURE_TRANSPORT' not in os.environ:
@@ -486,12 +497,33 @@ async def get_authenticated_google_service(
         logger.info(f"[{tool_name}] {error_msg}")
         raise GoogleAuthenticationError(error_msg)
 
+    # 1. Try to retrieve credentials from ContextVar first
+    injected_creds = get_injected_oauth_credentials()
+    if injected_creds and injected_creds.valid:
+        # Verify the credentials have the required scopes
+        if all(scope in injected_creds.scopes for scope in required_scopes):
+            logger.debug(f"[{tool_name}] Using valid credentials from ContextVar.")
+            try:
+                service = build(service_name, version, credentials=injected_creds)
+                logger.info(f"[{tool_name}] Successfully built {service_name} service using injected credentials")
+                return service, user_google_email
+            except Exception as e:
+                logger.warning(f"[{tool_name}] Failed to build service with injected credentials: {e}")
+                # Fall through to regular credential loading
+        else:
+            logger.debug(f"[{tool_name}] Injected credentials lack required scopes. Need: {required_scopes}, Have: {injected_creds.scopes}")
+
+    # 2. Fall back to existing logic for loading from file, refreshing, etc.
+    session_id = get_current_mcp_session_id()
+    logger.debug(f"[{tool_name}] Retrieved session_id from context: {session_id}")
+    logger.debug(f"[{tool_name}] Calling get_credentials via asyncio.to_thread for user: {user_google_email}")
+    
     credentials = await asyncio.to_thread(
         get_credentials,
         user_google_email=user_google_email,
         required_scopes=required_scopes,
         client_secrets_path=CONFIG_CLIENT_SECRETS_PATH,
-        session_id=None,  # Session ID not available in service layer
+        session_id=session_id,
     )
 
 
@@ -537,6 +569,11 @@ async def get_authenticated_google_service(
                     logger.info(f"[{tool_name}] Token email: {token_email}")
             except Exception as e:
                 logger.debug(f"[{tool_name}] Could not decode id_token: {e}")
+
+        # 3. After successfully obtaining/refreshing credentials, set them in ContextVar
+        # This ensures the credentials are set in the current ContextVar of the calling thread
+        set_injected_oauth_credentials(credentials)
+        logger.debug(f"[{tool_name}] Set credentials in ContextVar for future use in this request")
 
         logger.info(f"[{tool_name}] Successfully authenticated {service_name} service for user: {log_user_email}")
         return service, log_user_email

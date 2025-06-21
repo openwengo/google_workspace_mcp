@@ -3,17 +3,19 @@ import os
 from typing import Optional
 from importlib import metadata
 
-from fastapi import Header
-from fastapi.responses import HTMLResponse
+# Deferred import of HTMLResponse moved inside functions to avoid import errors during testing
 
 from mcp import types
 
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from auth.google_auth import handle_auth_callback, start_auth_flow, CONFIG_CLIENT_SECRETS_PATH
 from auth.oauth_callback_server import get_oauth_redirect_uri, ensure_oauth_callback_available
 from auth.oauth_responses import create_error_response, create_success_response, create_server_error_response
+from auth.context import get_current_mcp_session_id, set_current_mcp_session_id, clear_context
 
 # Import shared configuration
 from auth.scopes import (
@@ -62,6 +64,33 @@ WORKSPACE_MCP_BASE_URI = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
 # Transport mode detection (will be set by main.py)
 _current_transport_mode = "stdio"  # Default to stdio
 
+
+class MCPSessionMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to extract MCP session ID from headers and set it in ContextVar.
+    This bridges the HTTP layer with the MCP tool execution context.
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        # Extract MCP session ID from header
+        mcp_session_id = request.headers.get("Mcp-Session-Id")
+        
+        if mcp_session_id:
+            logger.debug(f"Setting MCP session ID in context: {mcp_session_id}")
+            set_current_mcp_session_id(mcp_session_id)
+        else:
+            logger.debug("No MCP session ID found in request headers")
+            set_current_mcp_session_id(None)
+        
+        try:
+            # Process the request
+            response = await call_next(request)
+            return response
+        finally:
+            # Clean up context after request processing
+            clear_context()
+
+
 # Basic MCP server instance
 server = FastMCP(
     name="google_workspace",
@@ -69,6 +98,11 @@ server = FastMCP(
     port=WORKSPACE_MCP_PORT,
     host="0.0.0.0"
 )
+
+# Add the middleware to the FastMCP server's underlying Starlette app
+# Note: We need to call the method to get the actual app instance
+http_app = server.streamable_http_app()
+http_app.add_middleware(MCPSessionMiddleware)
 
 def set_transport_mode(mode: str):
     """Set the current transport mode for OAuth callback handling."""
@@ -98,7 +132,8 @@ async def health_check(request: Request):
 
 
 @server.custom_route("/oauth2callback", methods=["GET"])
-async def oauth2_callback(request: Request) -> HTMLResponse:
+async def oauth2_callback(request: Request) -> "HTMLResponse":
+    from fastapi.responses import HTMLResponse  # Deferred import to avoid import errors during testing
     """
     Handle OAuth2 callback from Google via a custom route.
     This endpoint exchanges the authorization code for credentials and saves them.
@@ -158,14 +193,13 @@ async def oauth2_callback(request: Request) -> HTMLResponse:
 @server.tool()
 async def start_google_auth(
     user_google_email: str,
-    service_name: str,
-    mcp_session_id: Optional[str] = Header(None, alias="Mcp-Session-Id")
+    service_name: str
 ) -> str:
     """
     Initiates the Google OAuth 2.0 authentication flow for the specified user email and service.
     This is the primary method to establish credentials when no valid session exists or when targeting a specific account for a particular service.
     It generates an authorization URL that the LLM must present to the user.
-    The authentication attempt is linked to the current MCP session via `mcp_session_id`.
+    The authentication attempt is linked to the current MCP session via the session ID retrieved from context.
 
     LLM Guidance:
     - Use this tool when you need to authenticate a user for a specific Google service (e.g., "Google Calendar", "Google Docs", "Gmail", "Google Drive")
@@ -181,7 +215,6 @@ async def start_google_auth(
     Args:
         user_google_email (str): The user's full Google email address (e.g., 'example@gmail.com'). This is REQUIRED.
         service_name (str): The name of the Google service for which authentication is being requested (e.g., "Google Calendar", "Google Docs"). This is REQUIRED.
-        mcp_session_id (Optional[str]): The active MCP session ID (automatically injected by FastMCP from the Mcp-Session-Id header). Links the OAuth flow state to the session.
 
     Returns:
         str: A detailed message for the LLM with the authorization URL and instructions to guide the user through the authentication process.
@@ -196,6 +229,8 @@ async def start_google_auth(
         logger.error(f"[start_google_auth] {error_msg}")
         raise Exception(error_msg)
 
+    # Retrieve mcp_session_id from ContextVar
+    mcp_session_id = get_current_mcp_session_id()
     logger.info(f"Tool 'start_google_auth' invoked for user_google_email: '{user_google_email}', service: '{service_name}', session: '{mcp_session_id}'.")
 
     # Ensure OAuth callback is available for current transport mode
