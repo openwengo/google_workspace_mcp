@@ -12,13 +12,14 @@ from mcp import types
 from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
+from core.tool_wrapper import tool
 from core.server import server
 from core.utils import handle_http_errors
 
 logger = logging.getLogger(__name__)
 
 
-@server.tool()
+@tool(server)
 @require_google_service("slides", "slides")
 @handle_http_errors("create_presentation")
 async def create_presentation(
@@ -59,7 +60,7 @@ async def create_presentation(
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("slides", "slides_read")
 @handle_http_errors("get_presentation")
 async def get_presentation(
@@ -107,7 +108,7 @@ Slides Breakdown:
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("slides", "slides")
 @handle_http_errors("batch_update_presentation")
 async def batch_update_presentation(
@@ -164,7 +165,7 @@ async def batch_update_presentation(
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("slides", "slides_read")
 @handle_http_errors("get_page")
 async def get_page(
@@ -226,7 +227,7 @@ Page Elements:
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("slides", "slides_read")
 @handle_http_errors("get_page_thumbnail")
 async def get_page_thumbnail(

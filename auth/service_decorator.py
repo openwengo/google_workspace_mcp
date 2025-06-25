@@ -4,11 +4,14 @@ from functools import wraps
 from typing import Dict, List, Optional, Any, Callable, Union
 from datetime import datetime, timedelta
 
+import os
 from google.auth.exceptions import RefreshError
 from auth.google_auth import get_authenticated_google_service, GoogleAuthenticationError
-from auth.context import get_current_mcp_session_id, set_injected_oauth_credentials, get_injected_oauth_credentials
+from auth.context import get_current_mcp_session_id, set_injected_oauth_credentials, get_injected_oauth_credentials, get_user_email_from_header
 
 logger = logging.getLogger(__name__)
+
+EMAIL_IN_HEADER = os.getenv("EMAIL_IN_HEADER", "0") == "1"
 
 # Import scope constants
 from auth.scopes import (
@@ -214,14 +217,18 @@ def require_google_service(
             # Note: `args` and `kwargs` are now the arguments for the *wrapper*,
             # which does not include 'service'.
 
-            # Extract user_google_email from the arguments passed to the wrapper
-            bound_args = wrapper_sig.bind(*args, **kwargs)
-            bound_args.apply_defaults()
-            user_google_email = bound_args.arguments.get('user_google_email')
+            # Determine the user's email
+            user_google_email = None
+            if EMAIL_IN_HEADER:
+                user_google_email = get_user_email_from_header()
+                if not user_google_email:
+                    raise Exception("Email must be provided in 'x-user-email' header when EMAIL_IN_HEADER is enabled.")
+            else:
+                bound_args = wrapper_sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+                user_google_email = bound_args.arguments.get('user_google_email')
 
             if not user_google_email:
-                # This should ideally not be reached if 'user_google_email' is a required parameter
-                # in the function signature, but it's a good safeguard.
                 raise Exception("'user_google_email' parameter is required but was not found.")
 
             # Get service configuration from the decorator's arguments

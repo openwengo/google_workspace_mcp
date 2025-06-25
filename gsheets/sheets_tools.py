@@ -12,6 +12,7 @@ from mcp import types
 from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
+from core.tool_wrapper import tool
 from core.server import server
 from core.utils import handle_http_errors
 
@@ -19,7 +20,7 @@ from core.utils import handle_http_errors
 logger = logging.getLogger(__name__)
 
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("list_spreadsheets")
 async def list_spreadsheets(
@@ -68,7 +69,7 @@ async def list_spreadsheets(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("sheets", "sheets_read")
 @handle_http_errors("get_spreadsheet_info")
 async def get_spreadsheet_info(
@@ -118,7 +119,7 @@ async def get_spreadsheet_info(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("sheets", "sheets_read")
 @handle_http_errors("read_sheet_values")
 async def read_sheet_values(
@@ -168,7 +169,7 @@ async def read_sheet_values(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("sheets", "sheets_write")
 @handle_http_errors("modify_sheet_values")
 async def modify_sheet_values(
@@ -239,7 +240,7 @@ async def modify_sheet_values(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("sheets", "sheets_write")
 @handle_http_errors("create_spreadsheet")
 async def create_spreadsheet(
@@ -288,7 +289,7 @@ async def create_spreadsheet(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("sheets", "sheets_write")
 @handle_http_errors("create_sheet")
 async def create_sheet(

@@ -23,6 +23,12 @@ _injected_oauth_credentials: ContextVar[Optional[Any]] = ContextVar(
     default=None
 )
 
+# ContextVar for storing the user email from the 'x-user-email' header
+_user_email_from_header: ContextVar[Optional[str]] = ContextVar(
+    'user_email_from_header',
+    default=None
+)
+
 
 def get_current_mcp_session_id() -> Optional[str]:
     """
@@ -81,10 +87,34 @@ def reset_injected_oauth_credentials() -> None:
     logger.debug("Reset OAuth credentials in context")
 
 
+def get_user_email_from_header() -> Optional[str]:
+    """
+    Retrieves the user email from the current context, if set from the header.
+
+    Returns:
+        Optional[str]: The user's email address if set, None otherwise.
+    """
+    email = _user_email_from_header.get()
+    logger.debug(f"Retrieved user email from header context: {email}")
+    return email
+
+
+def set_user_email_from_header(email: Optional[str]) -> None:
+    """
+    Sets the user email from the header for the current context.
+
+    Args:
+        email: The user's email address to store in the context.
+    """
+    _user_email_from_header.set(email)
+    logger.debug(f"Set user email from header in context: {email}")
+
+
 def clear_context() -> None:
     """
     Clears all context variables. Useful for cleanup or testing.
     """
     _current_mcp_session_id.set(None)
     _injected_oauth_credentials.set(None)
+    _user_email_from_header.set(None)
     logger.debug("Cleared all context variables")

@@ -18,6 +18,7 @@ from fastapi import Body
 from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
+from core.tool_wrapper import tool
 from core.utils import handle_http_errors
 from core.server import (
     GMAIL_READONLY_SCOPE,
@@ -133,7 +134,7 @@ def _format_gmail_results_plain(messages: list, query: str) -> str:
     return "\n".join(lines)
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("search_gmail_messages")
 async def search_gmail_messages(
@@ -166,7 +167,7 @@ async def search_gmail_messages(
     return formatted_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("get_gmail_message_content")
 async def get_gmail_message_content(
@@ -234,7 +235,7 @@ async def get_gmail_message_content(
     return content_text
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("get_gmail_messages_content_batch")
 async def get_gmail_messages_content_batch(
@@ -387,7 +388,7 @@ async def get_gmail_messages_content_batch(
     return final_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_SEND_SCOPE)
 @handle_http_errors("send_gmail_message")
 async def send_gmail_message(
@@ -424,7 +425,7 @@ async def send_gmail_message(
     return f"Email sent! Message ID: {message_id}"
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
 @handle_http_errors("draft_gmail_message")
 async def draft_gmail_message(
@@ -471,7 +472,7 @@ async def draft_gmail_message(
     return f"Draft created! Draft ID: {draft_id}"
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("get_gmail_thread_content")
 async def get_gmail_thread_content(
@@ -560,7 +561,7 @@ async def get_gmail_thread_content(
     return content_text
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", "gmail_read")
 @handle_http_errors("list_gmail_labels")
 async def list_gmail_labels(service, user_google_email: str) -> str:
@@ -608,7 +609,7 @@ async def list_gmail_labels(service, user_google_email: str) -> str:
     return "\n".join(lines)
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_LABELS_SCOPE)
 @handle_http_errors("manage_gmail_label")
 async def manage_gmail_label(
@@ -682,7 +683,7 @@ async def manage_gmail_label(
         return f"Label '{label_name}' (ID: {label_id}) deleted successfully!"
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_MODIFY_SCOPE)
 @handle_http_errors("modify_gmail_message_labels")
 async def modify_gmail_message_labels(
@@ -763,7 +764,7 @@ def _quote_original_message(original_body: str) -> str:
     return "\n".join(quoted_lines)
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_SEND_SCOPE)
 @handle_http_errors("reply_to_gmail_message")
 async def reply_to_gmail_message(
@@ -820,7 +821,7 @@ async def reply_to_gmail_message(
     return f"Reply sent! Message ID: {sent_message_id}"
 
 
-@server.tool()
+@tool(server)
 @require_google_service("gmail", GMAIL_COMPOSE_SCOPE)
 @handle_http_errors("draft_gmail_reply")
 async def draft_gmail_reply(

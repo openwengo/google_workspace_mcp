@@ -15,6 +15,7 @@ import io
 import httpx
 
 from auth.service_decorator import require_google_service
+from core.tool_wrapper import tool
 from core.utils import extract_office_xml_text, handle_http_errors
 from core.server import server
 
@@ -75,7 +76,7 @@ def _build_drive_list_params(
 
     return list_params
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("search_drive_files")
 async def search_drive_files(
@@ -142,7 +143,7 @@ async def search_drive_files(
     text_output = "\n".join(formatted_files_text_parts)
     return text_output
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("get_drive_file_content")
 async def get_drive_file_content(
@@ -232,7 +233,7 @@ async def get_drive_file_content(
     return header + body_text
 
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("list_drive_items")
 async def list_drive_items(
@@ -288,7 +289,7 @@ async def list_drive_items(
     text_output = "\n".join(formatted_items_text_parts)
     return text_output
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_file")
 @handle_http_errors("create_drive_file")
 async def create_drive_file(

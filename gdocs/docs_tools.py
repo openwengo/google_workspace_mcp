@@ -15,11 +15,12 @@ from googleapiclient.http import MediaIoBaseDownload
 # Auth & server utilities
 from auth.service_decorator import require_google_service, require_multiple_services
 from core.utils import extract_office_xml_text, handle_http_errors
+from core.tool_wrapper import tool
 from core.server import server
 
 logger = logging.getLogger(__name__)
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("search_docs")
 async def search_docs(
@@ -56,7 +57,7 @@ async def search_docs(
         )
     return "\n".join(output)
 
-@server.tool()
+@tool(server)
 @require_multiple_services([
     {"service_type": "drive", "scopes": "drive_read", "param_name": "drive_service"},
     {"service_type": "docs", "scopes": "docs_read", "param_name": "docs_service"}
@@ -156,7 +157,7 @@ async def get_doc_content(
     )
     return header + body_text
 
-@server.tool()
+@tool(server)
 @require_google_service("drive", "drive_read")
 @handle_http_errors("list_docs_in_folder")
 async def list_docs_in_folder(
@@ -188,7 +189,7 @@ async def list_docs_in_folder(
         out.append(f"- {f['name']} (ID: {f['id']}) Modified: {f.get('modifiedTime')} Link: {f.get('webViewLink')}")
     return "\n".join(out)
 
-@server.tool()
+@tool(server)
 @require_google_service("docs", "docs_write")
 @handle_http_errors("create_doc")
 async def create_doc(

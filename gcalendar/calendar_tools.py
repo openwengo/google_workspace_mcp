@@ -15,6 +15,7 @@ from googleapiclient.errors import HttpError
 
 from auth.service_decorator import require_google_service
 from core.utils import handle_http_errors
+from core.tool_wrapper import tool
 
 from core.server import server
 
@@ -78,7 +79,7 @@ def _correct_time_format_for_api(
     return time_str
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_read")
 @handle_http_errors("list_calendars")
 async def list_calendars(service, user_google_email: str) -> str:
@@ -112,7 +113,7 @@ async def list_calendars(service, user_google_email: str) -> str:
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_read")
 @handle_http_errors("get_events")
 async def get_events(
@@ -200,7 +201,7 @@ async def get_events(
     return text_output
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_events")
 @handle_http_errors("create_event")
 async def create_event(
@@ -325,7 +326,7 @@ async def create_event(
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_events")
 @handle_http_errors("modify_event")
 async def modify_event(
@@ -445,7 +446,7 @@ async def modify_event(
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_events")
 @handle_http_errors("delete_event")
 async def delete_event(service, user_google_email: str, event_id: str, calendar_id: str = "primary") -> str:
@@ -499,7 +500,7 @@ async def delete_event(service, user_google_email: str, event_id: str, calendar_
     return confirmation_message
 
 
-@server.tool()
+@tool(server)
 @require_google_service("calendar", "calendar_read")
 @handle_http_errors("get_event")
 async def get_event(

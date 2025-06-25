@@ -15,7 +15,8 @@ from starlette.responses import Response
 from auth.google_auth import handle_auth_callback, start_auth_flow, CONFIG_CLIENT_SECRETS_PATH
 from auth.oauth_callback_server import get_oauth_redirect_uri, ensure_oauth_callback_available
 from auth.oauth_responses import create_error_response, create_success_response, create_server_error_response
-from auth.context import get_current_mcp_session_id, set_current_mcp_session_id, clear_context
+from auth.context import get_current_mcp_session_id, set_current_mcp_session_id, clear_context, set_user_email_from_header
+from core.tool_wrapper import tool
 
 # Import shared configuration
 from auth.scopes import (
@@ -55,7 +56,7 @@ from auth.scopes import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 WORKSPACE_MCP_PORT = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", 8000)))
@@ -64,23 +65,35 @@ WORKSPACE_MCP_BASE_URI = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
 # Transport mode detection (will be set by main.py)
 _current_transport_mode = "stdio"  # Default to stdio
 
+EMAIL_IN_HEADER = os.getenv("EMAIL_IN_HEADER", "0") == "1"
+
 
 class MCPSessionMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to extract MCP session ID from headers and set it in ContextVar.
-    This bridges the HTTP layer with the MCP tool execution context.
+    Middleware to extract MCP session ID and user email from headers,
+    setting them in ContextVars for the request lifecycle.
     """
     
     async def dispatch(self, request: Request, call_next):
-        # Extract MCP session ID from header
+        # Log all incoming headers for debugging purposes
+        logger.info(f"Incoming request headers: {dict(request.headers)}")
+
+        # Extract and set MCP session ID
         mcp_session_id = request.headers.get("Mcp-Session-Id")
-        
+        set_current_mcp_session_id(mcp_session_id)
         if mcp_session_id:
-            logger.debug(f"Setting MCP session ID in context: {mcp_session_id}")
-            set_current_mcp_session_id(mcp_session_id)
+            logger.debug(f"Set MCP session ID in context: {mcp_session_id}")
         else:
             logger.debug("No MCP session ID found in request headers")
-            set_current_mcp_session_id(None)
+
+        # If header-based email is enabled, extract it
+        if EMAIL_IN_HEADER:
+            user_email = request.headers.get("x-user-email")
+            set_user_email_from_header(user_email)
+            if user_email:
+                logger.info(f"Found 'x-user-email' header: {user_email}")
+            else:
+                logger.info("'x-user-email' header not found in request.")
         
         try:
             # Process the request
@@ -99,10 +112,8 @@ server = FastMCP(
     host="0.0.0.0"
 )
 
-# Add the middleware to the FastMCP server's underlying Starlette app
-# Note: We need to call the method to get the actual app instance
-http_app = server.streamable_http_app()
-http_app.add_middleware(MCPSessionMiddleware)
+# The middleware is now added in core/app.py to ensure it's applied
+# to the instance that uvicorn runs.
 
 def set_transport_mode(mode: str):
     """Set the current transport mode for OAuth callback handling."""
@@ -190,7 +201,7 @@ async def oauth2_callback(request: Request) -> "HTMLResponse":
         # Generic error page for any other issues during token exchange or credential saving
         return create_server_error_response(str(e))
 
-@server.tool()
+@tool(server)
 async def start_google_auth(
     user_google_email: str,
     service_name: str

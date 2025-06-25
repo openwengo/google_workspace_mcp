@@ -150,7 +150,9 @@ def main():
 
         if args.transport == 'streamable-http':
             # The server is already configured with port and server_url in core/server.py
-            server.run(transport="streamable-http")
+            import uvicorn
+            from core.app import http_app
+            uvicorn.run(http_app, host="0.0.0.0", port=port)
         else:
             server.run()
     except KeyboardInterrupt:
