@@ -358,3 +358,54 @@ async def create_drive_file(
     confirmation_message = f"Successfully created file '{created_file.get('name', file_name)}' (ID: {created_file.get('id', 'N/A')}) in folder '{folder_id}' for {user_google_email}. Link: {link}"
     logger.info(f"Successfully created file. Link: {link}")
     return confirmation_message
+@tool(server)
+@require_google_service("drive", "drive_read")
+@handle_http_errors("list_shared_drives")
+async def list_shared_drives(
+    service,
+    user_google_email: str,
+    page_size: int = 100,
+) -> str:
+    """
+    Lists all shared drives accessible to the user.
+
+    Args:
+        user_google_email (str): The user's Google email address.
+        page_size (int): Maximum number of shared drives to return per page. Defaults to 100.
+
+    Returns:
+        str: A formatted list of shared drives with their IDs and names.
+    """
+    logger.info(
+        f"[list_shared_drives] Invoked. Email: '{user_google_email}', Page Size: {page_size}"
+    )
+
+    results = await asyncio.to_thread(
+        service.drives()
+        .list(
+            pageSize=page_size,
+            fields="nextPageToken, drives(id, name)",
+            useDomainAdminAccess=False,  # Avoid admin-specific results
+        )
+        .execute
+    )
+
+    drives = results.get("drives", [])
+    if not drives:
+        return f"No shared drives found for {user_google_email}."
+
+    formatted_drives_text_parts = [
+        f"Found {len(drives)} shared drives for {user_google_email}:"
+    ]
+    for drive in drives:
+        formatted_drives_text_parts.append(
+            f"- Name: \"{drive.get('name', 'Unnamed Drive')}\" (ID: {drive.get('id', 'N/A')})"
+        )
+
+    next_page_token = results.get("nextPageToken")
+    if next_page_token:
+        formatted_drives_text_parts.append(
+            f"\nNext Page Token: {next_page_token}"
+        )
+
+    return "\n".join(formatted_drives_text_parts)
