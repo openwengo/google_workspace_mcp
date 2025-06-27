@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-google-workspace-mcp
+  labels:
+    app: google-workspace-mcp
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: google-workspace-mcp
+  template:
+    metadata:
+      labels:
+        app: google-workspace-mcp
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.serviceAccountName }}
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: google-workspace-mcp
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.application.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: WORKSPACE_MCP_PORT
+              value: "{{ .Values.application.port }}"
+            - name: OAUTH_CALLBACK_BASE_URI
+              value: "{{ .Values.application.oauthCallbackBaseUri }}"
+            - name: TOOLS
+              value: "{{ .Values.application.tools }}"
+            {{- if .Values.application.emailInHeader }}
+            - name: EMAIL_IN_HEADER
+              value: "1"
+            {{- end }}
+            {{- if .Values.application.ssm.enabled }}
+            - name: CREDENTIALS_SSM_PARAMETERS_ENABLE
+              value: "1"
+            - name: CREDENTIALS_SSM_PARAMETERS_PREFIX
+              value: "{{ .Values.application.ssm.prefix }}"
+            - name: CREDENTIALS_SSM_KMS_KEY
+              value: "{{ .Values.application.ssm.kmsKey }}"
+            {{- end }}
+          {{- if .Values.secrets.existingSecretName }}
+          volumeMounts:
+            - name: google-secrets
+              mountPath: "/app/client_secrets.json"
+              subPath: "client_secret.json"
+              readOnly: true
+          {{- end }}
+      {{- if .Values.secrets.existingSecretName }}
+      volumes:
+        - name: google-secrets
+          secret:
+            secretName: {{ .Values.secrets.existingSecretName }}
+      {{- end }}

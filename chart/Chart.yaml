@@ -1,0 +1,5 @@
+apiVersion: v2
+name: google-workspace-mcp
+description: A Helm chart for deploying the Google Workspace MCP server.
+version: 0.1.0
+appVersion: "1.0"
