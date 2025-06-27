@@ -110,6 +110,7 @@ uv run main.py
    The server's base URL and port can be customized using environment variables:
    - `WORKSPACE_MCP_BASE_URI`: Sets the base URI for the server (default: http://localhost). This affects the server_url used for Gemini native function calling and the OAUTH_REDIRECT_URI.
    - `WORKSPACE_MCP_PORT`: Sets the port the server listens on (default: 8000). This affects the server_url, port, and OAUTH_REDIRECT_URI.
+   - `OAUTH_CALLBACK_BASE_URI`: Sets a dedicated public-facing URI for the OAuth callback, which is ideal for containerized deployments behind a proxy. If not set, the callback URI is constructed from `WORKSPACE_MCP_BASE_URI` and `WORKSPACE_MCP_PORT`.
 
 ### Start the Server
 

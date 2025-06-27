@@ -7,6 +7,7 @@ In stdio mode: Starts a minimal HTTP server just for OAuth callbacks
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Optional, Dict, Any
@@ -20,6 +21,9 @@ from auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP, SCOPES
 from auth.oauth_responses import create_error_response, create_success_response, create_server_error_response
 
 logger = logging.getLogger(__name__)
+
+# Get the OAuth callback base URI from environment variables, with a fallback to None
+OAUTH_CALLBACK_BASE_URI = os.getenv("OAUTH_CALLBACK_BASE_URI")
 
 class MinimalOAuthServer:
     """
@@ -59,6 +63,11 @@ class MinimalOAuthServer:
                 return create_error_response(error_message)
 
             try:
+                if not state:
+                    error_message = "Authentication failed: No state parameter received from Google."
+                    logger.error(error_message)
+                    return create_error_response(error_message)
+                
                 logger.info(f"OAuth callback: Received code (state: {state}). Attempting to exchange for tokens.")
 
                 mcp_session_id: Optional[str] = OAUTH_STATE_TO_SESSION_ID_MAP.pop(state, None)
@@ -177,7 +186,10 @@ _minimal_oauth_server: Optional[MinimalOAuthServer] = None
 
 def get_oauth_redirect_uri(transport_mode: str = "stdio", port: int = 8000, base_uri: str = "http://localhost") -> str:
     """
-    Get the appropriate OAuth redirect URI based on transport mode.
+    Get the appropriate OAuth redirect URI.
+
+    If OAUTH_CALLBACK_BASE_URI is set, it is used. Otherwise, the URI is
+    constructed from the base_uri and port, which is ideal for local development.
 
     Args:
         transport_mode: "stdio" or "streamable-http"
@@ -187,6 +199,11 @@ def get_oauth_redirect_uri(transport_mode: str = "stdio", port: int = 8000, base
     Returns:
         OAuth redirect URI
     """
+    if OAUTH_CALLBACK_BASE_URI:
+        # Use the explicitly configured callback URI, appending the path
+        return f"{OAUTH_CALLBACK_BASE_URI.rstrip('/')}/oauth2callback"
+    
+    # Fallback to the local development setup
     return f"{base_uri}:{port}/oauth2callback"
 
 def ensure_oauth_callback_available(transport_mode: str = "stdio", port: int = 8000, base_uri: str = "http://localhost") -> bool:

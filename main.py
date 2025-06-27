@@ -6,6 +6,7 @@ from importlib import metadata
 
 # Local imports
 from core.server import server, set_transport_mode
+from auth.oauth_callback_server import get_oauth_redirect_uri
 from core.utils import check_credentials_directory_permissions
 
 logging.basicConfig(
@@ -71,7 +72,8 @@ def main():
     safe_print(f"   🌐 Transport: {args.transport}")
     if args.transport == 'streamable-http':
         safe_print(f"   🔗 URL: {base_uri}:{port}")
-        safe_print(f"   🔐 OAuth Callback: {base_uri}:{port}/oauth2callback")
+        oauth_callback_uri = get_oauth_redirect_uri(args.transport, port, base_uri)
+        safe_print(f"   🔐 OAuth Callback: {oauth_callback_uri}")
     safe_print(f"   👤 Mode: {'Single-user' if args.single_user else 'Multi-user'}")
     safe_print(f"   🐍 Python: {sys.version.split()[0]}")
     print()

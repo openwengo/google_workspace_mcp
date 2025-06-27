@@ -10,7 +10,7 @@ from mcp import types
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, HTMLResponse
 
 from auth.google_auth import handle_auth_callback, start_auth_flow, CONFIG_CLIENT_SECRETS_PATH
 from auth.oauth_callback_server import get_oauth_redirect_uri, ensure_oauth_callback_available
@@ -138,7 +138,6 @@ async def health_check(request: Request):
 
 @server.custom_route("/oauth2callback", methods=["GET"])
 async def oauth2_callback(request: Request) -> "HTMLResponse":
-    from fastapi.responses import HTMLResponse  # Deferred import to avoid import errors during testing
     """
     Handle OAuth2 callback from Google via a custom route.
     This endpoint exchanges the authorization code for credentials and saves them.
@@ -164,6 +163,11 @@ async def oauth2_callback(request: Request) -> "HTMLResponse":
             logger.error(f"OAuth client secrets file not found at {client_secrets_path}")
             # This is a server configuration error, should not happen in a deployed environment.
             return HTMLResponse(content="Server Configuration Error: Client secrets not found.", status_code=500)
+
+        if not state:
+            error_message = "Authentication failed: No state parameter received from Google."
+            logger.error(error_message)
+            return create_error_response(error_message)
 
         logger.info(f"OAuth callback: Received code (state: {state}). Attempting to exchange for tokens.")
 

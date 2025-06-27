@@ -1,10 +1,11 @@
 from fastapi import FastAPI
+from starlette.applications import Starlette
 from starlette.middleware.base import BaseHTTPMiddleware
 from .server import MCPSessionMiddleware, server
 
-def create_app() -> FastAPI:
+def create_app() -> Starlette:
     """
-    Creates and configures the FastAPI application instance,
+    Creates and configures the Starlette application instance,
     including the MCP server and any necessary middleware.
     """
     # Get the underlying FastAPI app from the FastMCP server
