@@ -70,7 +70,7 @@ class MCPSessionMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next):
         # Log all incoming headers for debugging purposes
-        logger.info(f"Incoming request headers: {dict(request.headers)}")
+        logger.debug(f"Incoming request headers: {dict(request.headers)}")
 
         # Extract and set MCP session ID
         mcp_session_id = request.headers.get("Mcp-Session-Id")

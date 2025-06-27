@@ -359,6 +359,7 @@ async def your_new_tool(service, param1: str, param2: int = 10):
 - **Network Exposure**: Consider authentication when using `mcpo` over networks
 - **Scope Minimization**: Tools request only necessary permissions
 - **Automatic Token Refresh**: Secure handling of expired tokens with proper error messaging
+- **AWS SSM Integration**: Optional support for storing credentials in AWS Systems Manager Parameter Store for enhanced security.
 
 ---
 
@@ -399,6 +400,28 @@ This command starts the `mcpo` proxy, serving your active (assuming port 8000) G
 6. Save the configuration
 
 The Google Workspace tools should now be available when interacting with models in Open WebUI.
+
+### AWS SSM Integration for Credential Storage
+
+For enhanced security, you can configure the server to store Google OAuth credentials in AWS Systems Manager (SSM) Parameter Store instead of the local filesystem.
+
+**Configuration:**
+
+To enable this feature, set the following environment variables:
+
+- `CREDENTIALS_SSM_PARAMETERS_ENABLE`: Set to `1` to enable the SSM integration.
+- `CREDENTIALS_SSM_PARAMETERS_PREFIX` (Optional): A prefix for the SSM parameter names. Defaults to `google_workspace_mcp`.
+- `CREDENTIALS_SSM_KMS_KEY` (Optional): The ID or ARN of a KMS key to use for encrypting the parameters. If not provided, the default SSM key will be used.
+
+**Parameter Naming Convention:**
+
+The SSM parameter names are generated using the following format:
+
+`{prefix}-{sanitized_email_user}-{email_hash}`
+
+- `{prefix}`: The value of `CREDENTIALS_SSM_PARAMETERS_PREFIX`.
+- `{sanitized_email_user}`: The user's email address before the `@` symbol, with all non-alphanumeric characters (except `-`) replaced by `_`.
+- `{email_hash}`: The first 10 characters of the SHA256 hash of the full email address.
 
 ---
 

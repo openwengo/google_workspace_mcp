@@ -4,8 +4,12 @@ import os
 import json
 import logging
 import asyncio
+import hashlib
+import re
 from typing import List, Optional, Tuple, Dict, Any, Callable
 import os
+import boto3
+from botocore.exceptions import ClientError
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow, InstalledAppFlow
@@ -32,7 +36,7 @@ DEFAULT_CREDENTIALS_DIR = ".credentials"
 # In-memory cache for session credentials, maps session_id to Credentials object
 # This is brittle and bad, but our options are limited with Claude in present state.
 # This should be more robust in a production system once OAuth2.1 is implemented in client.
-_SESSION_CREDENTIALS_CACHE: Dict[str, Credentials] = {}
+_SESSION_CREDENTIALS_CACHE: Dict[str, Any] = {}
 # Centralized Client Secrets Path Logic
 _client_secrets_env = os.getenv("GOOGLE_CLIENT_SECRETS")
 if _client_secrets_env:
@@ -89,67 +93,148 @@ def _get_user_credential_path(user_google_email: str, base_dir: str = DEFAULT_CR
         logger.info(f"Created credentials directory: {base_dir}")
     return os.path.join(base_dir, f"{user_google_email}.json")
 
-def save_credentials_to_file(user_google_email: str, credentials: Credentials, base_dir: str = DEFAULT_CREDENTIALS_DIR):
-    """Saves user credentials to a file."""
-    creds_path = _get_user_credential_path(user_google_email, base_dir)
-    creds_data = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret,
-        'scopes': credentials.scopes,
-        'expiry': credentials.expiry.isoformat() if credentials.expiry else None
-    }
-    try:
-        with open(creds_path, 'w') as f:
-            json.dump(creds_data, f)
-        logger.info(f"Credentials saved for user {user_google_email} to {creds_path}")
-    except IOError as e:
-        logger.error(f"Error saving credentials for user {user_google_email} to {creds_path}: {e}")
-        raise
+def _get_ssm_parameter_name(user_google_email: str) -> str:
+    """Constructs the SSM parameter name for storing user credentials."""
+    prefix = os.getenv("CREDENTIALS_SSM_PARAMETERS_PREFIX", "google_workspace_mcp")
+    
+    # Extract the part of the email before the @ symbol
+    email_prefix = user_google_email.split('@')[0]
+    
+    # Replace all non-alphanumeric characters (except -) with _
+    sanitized_email_prefix = re.sub(r'[^a-z0-9-]', '_', email_prefix.lower())
+    
+    # Create a SHA256 hash of the full email address and take the first 10 characters
+    email_hash = hashlib.sha256(user_google_email.encode('utf-8')).hexdigest()[:10]
+    
+    return f"{prefix}-{sanitized_email_prefix}-{email_hash}"
 
-def save_credentials_to_session(session_id: str, credentials: Credentials):
+def save_credentials_to_file(user_google_email: str, credentials: Any, base_dir: str = DEFAULT_CREDENTIALS_DIR):
+    """Saves user credentials to a file or AWS SSM Parameter Store."""
+    if os.getenv('CREDENTIALS_SSM_PARAMETERS_ENABLE') == '1':
+        ssm_parameter_name = _get_ssm_parameter_name(user_google_email)
+        ssm_client = boto3.client('ssm')
+        creds_data = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes,
+            'expiry': credentials.expiry.isoformat() if credentials.expiry else None
+        }
+        try:
+            put_parameter_args = {
+                'Name': ssm_parameter_name,
+                'Value': json.dumps(creds_data),
+                'Type': 'SecureString',
+                'Overwrite': True
+            }
+            kms_key_id = os.getenv('CREDENTIALS_SSM_KMS_KEY')
+            if kms_key_id:
+                put_parameter_args['KeyId'] = kms_key_id
+            
+            ssm_client.put_parameter(**put_parameter_args)
+            logger.info(f"Credentials saved for user {user_google_email} to SSM parameter {ssm_parameter_name}")
+        except ClientError as e:
+            logger.error(f"Error saving credentials for user {user_google_email} to SSM parameter {ssm_parameter_name}: {e}")
+            raise
+    else:
+        creds_path = _get_user_credential_path(user_google_email, base_dir)
+        creds_data = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes,
+            'expiry': credentials.expiry.isoformat() if credentials.expiry else None
+        }
+        try:
+            with open(creds_path, 'w') as f:
+                json.dump(creds_data, f)
+            logger.info(f"Credentials saved for user {user_google_email} to {creds_path}")
+        except IOError as e:
+            logger.error(f"Error saving credentials for user {user_google_email} to {creds_path}: {e}")
+            raise
+
+def save_credentials_to_session(session_id: str, credentials: Any):
     """Saves user credentials to the in-memory session cache."""
     _SESSION_CREDENTIALS_CACHE[session_id] = credentials
     logger.debug(f"Credentials saved to session cache for session_id: {session_id}")
 
-def load_credentials_from_file(user_google_email: str, base_dir: str = DEFAULT_CREDENTIALS_DIR) -> Optional[Credentials]:
-    """Loads user credentials from a file."""
-    creds_path = _get_user_credential_path(user_google_email, base_dir)
-    if not os.path.exists(creds_path):
-        logger.info(f"No credentials file found for user {user_google_email} at {creds_path}")
-        return None
+def load_credentials_from_file(user_google_email: str, base_dir: str = DEFAULT_CREDENTIALS_DIR) -> Optional[Any]:
+    """Loads user credentials from a file or AWS SSM Parameter Store."""
+    if os.getenv('CREDENTIALS_SSM_PARAMETERS_ENABLE') == '1':
+        ssm_parameter_name = _get_ssm_parameter_name(user_google_email)
+        ssm_client = boto3.client('ssm')
+        try:
+            response = ssm_client.get_parameter(Name=ssm_parameter_name, WithDecryption=True)
+            creds_data = json.loads(response['Parameter']['Value'])
+            
+            expiry = None
+            if creds_data.get('expiry'):
+                try:
+                    from datetime import datetime
+                    expiry = datetime.fromisoformat(creds_data['expiry'])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse expiry time for {user_google_email}: {e}")
 
-    try:
-        with open(creds_path, 'r') as f:
-            creds_data = json.load(f)
+            credentials = Credentials(
+                token=creds_data.get('token'),
+                refresh_token=creds_data.get('refresh_token'),
+                token_uri=creds_data.get('token_uri'),
+                client_id=creds_data.get('client_id'),
+                client_secret=creds_data.get('client_secret'),
+                scopes=creds_data.get('scopes'),
+                expiry=expiry
+            )
+            logger.debug(f"Credentials loaded for user {user_google_email} from SSM parameter {ssm_parameter_name}")
+            return credentials
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ParameterNotFound':
+                logger.info(f"No credentials found for user {user_google_email} in SSM parameter {ssm_parameter_name}")
+                return None
+            else:
+                logger.error(f"Error loading credentials for user {user_google_email} from SSM parameter {ssm_parameter_name}: {e}")
+                return None
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error parsing credentials for user {user_google_email} from SSM parameter {ssm_parameter_name}: {e}")
+            return None
+    else:
+        creds_path = _get_user_credential_path(user_google_email, base_dir)
+        if not os.path.exists(creds_path):
+            logger.info(f"No credentials file found for user {user_google_email} at {creds_path}")
+            return None
 
-        # Parse expiry if present
-        expiry = None
-        if creds_data.get('expiry'):
-            try:
-                from datetime import datetime
-                expiry = datetime.fromisoformat(creds_data['expiry'])
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Could not parse expiry time for {user_google_email}: {e}")
+        try:
+            with open(creds_path, 'r') as f:
+                creds_data = json.load(f)
 
-        credentials = Credentials(
-            token=creds_data.get('token'),
-            refresh_token=creds_data.get('refresh_token'),
-            token_uri=creds_data.get('token_uri'),
-            client_id=creds_data.get('client_id'),
-            client_secret=creds_data.get('client_secret'),
-            scopes=creds_data.get('scopes'),
-            expiry=expiry
-        )
-        logger.debug(f"Credentials loaded for user {user_google_email} from {creds_path}")
-        return credentials
-    except (IOError, json.JSONDecodeError, KeyError) as e:
-        logger.error(f"Error loading or parsing credentials for user {user_google_email} from {creds_path}: {e}")
-        return None
+            # Parse expiry if present
+            expiry = None
+            if creds_data.get('expiry'):
+                try:
+                    from datetime import datetime
+                    expiry = datetime.fromisoformat(creds_data['expiry'])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse expiry time for {user_google_email}: {e}")
 
-def load_credentials_from_session(session_id: str) -> Optional[Credentials]:
+            credentials = Credentials(
+                token=creds_data.get('token'),
+                refresh_token=creds_data.get('refresh_token'),
+                token_uri=creds_data.get('token_uri'),
+                client_id=creds_data.get('client_id'),
+                client_secret=creds_data.get('client_secret'),
+                scopes=creds_data.get('scopes'),
+                expiry=expiry
+            )
+            logger.debug(f"Credentials loaded for user {user_google_email} from {creds_path}")
+            return credentials
+        except (IOError, json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error loading or parsing credentials for user {user_google_email} from {creds_path}: {e}")
+            return None
+
+def load_credentials_from_session(session_id: str) -> Optional[Any]:
     """Loads user credentials from the in-memory session cache."""
     credentials = _SESSION_CREDENTIALS_CACHE.get(session_id)
     if credentials:
@@ -265,7 +350,7 @@ def handle_auth_callback(
     redirect_uri: str, # Made redirect_uri a required parameter
     credentials_base_dir: str = DEFAULT_CREDENTIALS_DIR,
     session_id: Optional[str] = None
-) -> Tuple[str, Credentials]:
+) -> Tuple[str, Any]:
     """
     Handles the callback from Google, exchanges the code for credentials,
     fetches user info, determines user_google_email, saves credentials (file & session),
@@ -338,7 +423,7 @@ def get_credentials(
     client_secrets_path: Optional[str] = None,
     credentials_base_dir: str = DEFAULT_CREDENTIALS_DIR,
     session_id: Optional[str] = None
-) -> Optional[Credentials]:
+) -> Optional[Any]:
     """
     Retrieves stored credentials, prioritizing session, then file. Refreshes if necessary.
     If credentials are loaded from file and a session_id is present, they are cached in the session.
@@ -399,7 +484,7 @@ def get_credentials(
 
     logger.debug(f"[get_credentials] Credentials found. Scopes: {credentials.scopes}, Valid: {credentials.valid}, Expired: {credentials.expired}")
 
-    if not all(scope in credentials.scopes for scope in required_scopes):
+    if required_scopes and (not credentials.scopes or not all(scope in credentials.scopes for scope in required_scopes)):
         logger.warning(f"[get_credentials] Credentials lack required scopes. Need: {required_scopes}, Have: {credentials.scopes}. User: '{user_google_email}', Session: '{session_id}'")
         return None # Re-authentication needed for scopes
 
@@ -437,7 +522,7 @@ def get_credentials(
         return None
 
 
-def get_user_info(credentials: Credentials) -> Optional[Dict[str, Any]]:
+def get_user_info(credentials: Any) -> Optional[Dict[str, Any]]:
     """Fetches basic user profile information (requires userinfo.email scope)."""
     if not credentials or not credentials.valid:
         logger.error("Cannot get user info: Invalid or missing credentials.")

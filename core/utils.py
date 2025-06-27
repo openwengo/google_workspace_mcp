@@ -19,6 +19,10 @@ def check_credentials_directory_permissions(credentials_dir: str = ".credentials
         PermissionError: If the service lacks necessary permissions
         OSError: If there are other file system issues
     """
+    if os.getenv('CREDENTIALS_SSM_PARAMETERS_ENABLE') == '1':
+        logger.info("SSM credentials enabled, skipping file-based credentials directory check.")
+        return
+
     try:
         # Check if directory exists
         if os.path.exists(credentials_dir):

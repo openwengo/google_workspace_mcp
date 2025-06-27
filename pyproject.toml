@@ -10,6 +10,7 @@ readme = "README.md"
 keywords = [ "mcp", "google", "workspace", "llm", "ai", "claude", "model", "context", "protocol", "server"]
 requires-python = ">=3.11"
 dependencies = [
+ "boto3>=1.34.149",
  "fastapi>=0.115.12",
  "fastmcp>=2.3.3",
  "google-api-python-client>=2.168.0",
