@@ -8,6 +8,7 @@ import os
 from google.auth.exceptions import RefreshError
 from auth.google_auth import get_authenticated_google_service, GoogleAuthenticationError
 from auth.context import get_current_mcp_session_id, set_injected_oauth_credentials, get_injected_oauth_credentials, get_user_email_from_header
+from auth.scope_registry import register_tool_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +198,11 @@ def require_google_service(
             # Original authentication logic is handled automatically
     """
     def decorator(func: Callable) -> Callable:
+        # --- This part runs when the module is loaded ---
+        # Resolve scopes and register them immediately.
+        resolved_scopes = _resolve_scopes(scopes)
+        register_tool_scopes(resolved_scopes)
+        
         # Inspect the original function signature
         original_sig = inspect.signature(func)
         params = list(original_sig.parameters.values())
@@ -214,6 +220,8 @@ def require_google_service(
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            # --- This part runs when the tool is called ---
+            
             # Note: `args` and `kwargs` are now the arguments for the *wrapper*,
             # which does not include 'service'.
 
@@ -238,9 +246,6 @@ def require_google_service(
             config = SERVICE_CONFIGS[service_type]
             service_name = config["service"]
             service_version = version or config["version"]
-
-            # Resolve scopes
-            resolved_scopes = _resolve_scopes(scopes)
 
             # --- Service Caching and Authentication Logic (largely unchanged) ---
             service = None
@@ -283,7 +288,7 @@ def require_google_service(
                 raise Exception(error_message)
 
         # Set the wrapper's signature to the one without 'service'
-        wrapper.__signature__ = wrapper_sig
+        wrapper.__signature__ = wrapper_sig  # type: ignore
         return wrapper
     return decorator
 
@@ -308,8 +313,16 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
             # Both services are automatically injected
     """
     def decorator(func: Callable) -> Callable:
+        # --- This part runs when the module is loaded ---
+        # Resolve and register all scopes immediately.
+        for config in service_configs:
+            resolved_scopes = _resolve_scopes(config["scopes"])
+            register_tool_scopes(resolved_scopes)
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            # --- This part runs when the tool is called ---
+
             # Extract user_google_email
             sig = inspect.signature(func)
             param_names = list(sig.parameters.keys())

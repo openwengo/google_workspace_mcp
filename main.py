@@ -14,6 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+log_file_path = None
 try:
     root_logger = logging.getLogger()
     log_file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -104,6 +105,15 @@ def main():
     for tool in tools_to_import:
         tool_imports[tool]()
         safe_print(f"   {tool_icons[tool]} {tool.title()} - Google {tool.title()} API integration")
+    print()
+
+    # Display registered OAuth scopes
+    from auth.scope_registry import get_required_scopes
+    required_scopes = get_required_scopes()
+    safe_print(f"🔒 OAuth Scopes Requested ({len(required_scopes)} total):")
+    # Sort scopes for consistent display
+    for scope in sorted(required_scopes):
+        safe_print(f"   - {scope}")
     print()
 
     safe_print(f"📊 Configuration Summary:")

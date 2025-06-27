@@ -13,7 +13,8 @@ from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP, SCOPES
+from auth.scopes import OAUTH_STATE_TO_SESSION_ID_MAP
+from auth.scope_registry import get_required_scopes
 from auth.context import (
     get_current_mcp_session_id,
     get_injected_oauth_credentials,
@@ -212,9 +213,12 @@ async def start_auth_flow(
             OAUTH_STATE_TO_SESSION_ID_MAP[oauth_state] = mcp_session_id
             logger.info(f"[start_auth_flow] Stored mcp_session_id '{mcp_session_id}' for oauth_state '{oauth_state}'.")
 
+        required_scopes = get_required_scopes()
+        logger.info(f"[start_auth_flow] Requesting {len(required_scopes)} scopes for the authorization flow: {required_scopes}")
+
         flow = Flow.from_client_secrets_file(
             CONFIG_CLIENT_SECRETS_PATH, # Use module constant
-            scopes=SCOPES, # Use global SCOPES
+            scopes=required_scopes, # Use global SCOPES
             redirect_uri=redirect_uri, # Use passed redirect_uri
             state=oauth_state
         )

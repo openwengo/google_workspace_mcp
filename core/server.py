@@ -18,6 +18,7 @@ from auth.oauth_responses import create_error_response, create_success_response,
 from auth.context import get_current_mcp_session_id, set_current_mcp_session_id, clear_context, set_user_email_from_header
 from core.tool_wrapper import tool
 
+from auth.scope_registry import get_required_scopes
 # Import shared configuration
 from auth.scopes import (
     OAUTH_STATE_TO_SESSION_ID_MAP,
@@ -32,27 +33,18 @@ from auth.scopes import (
     GMAIL_COMPOSE_SCOPE,
     GMAIL_MODIFY_SCOPE,
     GMAIL_LABELS_SCOPE,
-    BASE_SCOPES,
-    CALENDAR_SCOPES,
-    DRIVE_SCOPES,
-    GMAIL_SCOPES,
     DOCS_READONLY_SCOPE,
     DOCS_WRITE_SCOPE,
     CHAT_READONLY_SCOPE,
     CHAT_WRITE_SCOPE,
     CHAT_SPACES_SCOPE,
-    CHAT_SCOPES,
     SHEETS_READONLY_SCOPE,
     SHEETS_WRITE_SCOPE,
-    SHEETS_SCOPES,
     FORMS_BODY_SCOPE,
     FORMS_BODY_READONLY_SCOPE,
     FORMS_RESPONSES_READONLY_SCOPE,
-    FORMS_SCOPES,
     SLIDES_SCOPE,
     SLIDES_READONLY_SCOPE,
-    SLIDES_SCOPES,
-    SCOPES
 )
 
 # Configure logging
@@ -61,6 +53,8 @@ logger = logging.getLogger(__name__)
 
 WORKSPACE_MCP_PORT = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", 8000)))
 WORKSPACE_MCP_BASE_URI = os.getenv("WORKSPACE_MCP_BASE_URI", "http://localhost")
+
+
 
 # Transport mode detection (will be set by main.py)
 _current_transport_mode = "stdio"  # Default to stdio
@@ -183,7 +177,7 @@ async def oauth2_callback(request: Request) -> "HTMLResponse":
         # The user_id returned here is the Google-verified email.
         verified_user_id, credentials = handle_auth_callback(
             client_secrets_path=client_secrets_path,
-            scopes=SCOPES, # Ensure all necessary scopes are requested
+            scopes=get_required_scopes(), # Ensure all necessary scopes are requested
             authorization_response=str(request.url),
             redirect_uri=get_oauth_redirect_uri_for_current_mode(),
             session_id=mcp_session_id # Pass session_id if available
@@ -214,7 +208,7 @@ async def start_google_auth(
 
     LLM Guidance:
     - Use this tool when you need to authenticate a user for a specific Google service (e.g., "Google Calendar", "Google Docs", "Gmail", "Google Drive")
-      and don't have existing valid credentials for the session or specified email.
+      if there was an issue related to authentication.
     - You MUST provide the `user_google_email` and the `service_name`. If you don't know the email, ask the user first.
     - Valid `service_name` values typically include "Google Calendar", "Google Docs", "Gmail", "Google Drive".
     - After calling this tool, present the returned authorization URL clearly to the user and instruct them to:
