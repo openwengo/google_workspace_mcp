@@ -6,11 +6,13 @@ on:
       - main
     tags:
       - 'v*'
+      - 'google-workspace-mcp-*'
   workflow_dispatch:
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')    
     permissions:
       contents: read
       packages: write
@@ -75,7 +77,8 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/google-workspace-mcp-')
     permissions:
-      contents: write    
+      contents: write
+      packages: write      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
