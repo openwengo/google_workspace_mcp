@@ -74,6 +74,8 @@ jobs:
   release-helm-chart:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/google-workspace-mcp-')
+    permissions:
+      contents: write    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
