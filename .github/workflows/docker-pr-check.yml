@@ -1,0 +1,48 @@
+name: Docker PR Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: pr-check-image:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'pr-check-image:latest'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const output = `#### Trivy Scan Results
+            \n\n${{ steps.scan.outputs.results }}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
