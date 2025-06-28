@@ -10,8 +10,10 @@ image:
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
-serviceAccountName: ""
-
+serviceAccount:
+  create: true
+  name: "google-workspace-mcp"
+  annotations: {}
 service:
   type: ClusterIP
   port: 8000
