@@ -3,6 +3,15 @@ entries:
   google-workspace-mcp:
   - apiVersion: v2
     appVersion: 1.1.0
+    created: "2025-06-28T18:37:13.881518576Z"
+    description: A Helm chart for deploying the Google Workspace MCP server.
+    digest: 020b06e5f0e9941dda165faf7ad72273e992a347d834e4b793030b3a46f41771
+    name: google-workspace-mcp
+    urls:
+    - https://github.com/openwengo/google_workspace_mcp/releases/download/google-workspace-mcp-0.1.2/google-workspace-mcp-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: 1.1.0
     created: "2025-06-28T16:44:23.047388106Z"
     description: A Helm chart for deploying the Google Workspace MCP server.
     digest: eee2e7f3b745bed4f6563713944c362bc601212931140c03dc8ba87cd9cdd126
@@ -10,4 +19,4 @@ entries:
     urls:
     - https://github.com/openwengo/google_workspace_mcp/releases/download/google-workspace-mcp-0.1.1/google-workspace-mcp-0.1.1.tgz
     version: 0.1.1
-generated: "2025-06-28T16:44:23.047394478Z"
+generated: "2025-06-28T18:37:13.881530378Z"
