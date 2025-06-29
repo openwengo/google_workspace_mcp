@@ -81,7 +81,7 @@ spec:
           {{- if .Values.secrets.existingSecretName }}
           volumeMounts:
             - name: google-secrets
-              mountPath: "/app/client_secrets.json"
+              mountPath: "/app/client_secret.json"
               subPath: "client_secret.json"
               readOnly: true
           {{- end }}
