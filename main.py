@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import re
 import sys
 from importlib import metadata
 
@@ -56,6 +57,16 @@ def main():
     parser.add_argument('--transport', choices=['stdio', 'streamable-http'], default='stdio',
                         help='Transport mode: stdio (default) or streamable-http')
     args = parser.parse_args()
+
+    # If no --tools CLI flag was given, fall back to the TOOLS env
+    # variable injected by the Helm chart (space- OR comma-separated).
+    if args.tools is None:                      # CLI has precedence
+        tools_env = os.getenv("TOOLS", "").strip()
+        if tools_env:
+            # Accept either "gmail drive sheets" or "gmail,drive,sheets"
+            args.tools = [
+                t for t in re.split(r"[,\s]+", tools_env) if t
+            ]
 
     # Set port and base URI once for reuse throughout the function
     port = int(os.getenv("PORT", os.getenv("WORKSPACE_MCP_PORT", 8000)))
@@ -183,3 +194,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
