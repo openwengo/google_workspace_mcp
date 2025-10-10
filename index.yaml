@@ -31,6 +31,30 @@ entries:
   workspace-mcp:
   - apiVersion: v2
     appVersion: 1.2.0
+    created: "2025-10-10T16:10:51.435053151Z"
+    description: A Helm chart for Google Workspace MCP Server - Comprehensive Google
+      Workspace integration for AI assistants
+    digest: ac3a4641658e273728c733c16d3f216557664ffe53b1e03e33b911273e49ebd4
+    home: https://workspacemcp.com
+    keywords:
+    - mcp
+    - google
+    - workspace
+    - ai
+    - llm
+    - claude
+    maintainers:
+    - email: taylor@taylorwilsdon.com
+      name: Taylor Wilsdon
+    name: workspace-mcp
+    sources:
+    - https://github.com/taylorwilsdon/google_workspace_mcp
+    type: application
+    urls:
+    - https://github.com/openwengo/google_workspace_mcp/releases/download/workspace-mcp-0.1.2/workspace-mcp-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: 1.2.0
     created: "2025-10-10T15:44:35.458153634Z"
     description: A Helm chart for Google Workspace MCP Server - Comprehensive Google
       Workspace integration for AI assistants
@@ -53,4 +77,4 @@ entries:
     urls:
     - https://github.com/openwengo/google_workspace_mcp/releases/download/workspace-mcp-0.1.1/workspace-mcp-0.1.1.tgz
     version: 0.1.1
-generated: "2025-10-10T15:44:35.458165326Z"
+generated: "2025-10-10T16:10:51.435069061Z"
