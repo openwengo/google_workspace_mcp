@@ -1,3 +1,4 @@
+{{- $oauthSecretName := default (printf "%s-oauth" (include "workspace-mcp.fullname" .)) .Values.secrets.googleOAuth.existingSecretName }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,18 +63,18 @@ spec:
             - name: GOOGLE_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: client-id
             - name: GOOGLE_OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: client-secret
             {{- if .Values.secrets.googleOAuth.userEmail }}
             - name: USER_GOOGLE_EMAIL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: user-email
             {{- end }}
             # Single-user mode
