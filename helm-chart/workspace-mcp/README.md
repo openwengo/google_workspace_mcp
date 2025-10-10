@@ -44,6 +44,8 @@ The following table lists the configurable parameters and their default values:
 | `resources.limits.memory` | Memory limit | `512Mi` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 
+Values placed under `env` support Helm templating, letting you reference release metadata (for example, `env.WORKSPACE_MCP_BASE_URI="http://{{ include \"workspace-mcp.fullname\" . }}.{{ .Release.Namespace }}.svc.cluster.local"`).
+
 ## Google OAuth Setup
 
 Before deploying, you need to set up Google OAuth credentials:
