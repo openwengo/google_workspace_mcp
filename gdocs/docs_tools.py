@@ -324,6 +324,8 @@ async def modify_doc_text(
     underline: bool = None,
     font_size: int = None,
     font_family: str = None,
+    text_color: Any = None,
+    background_color: Any = None,
 ) -> str:
     """
     Modifies text in a Google Doc - can insert/replace text and/or apply formatting in a single operation.
@@ -339,11 +341,16 @@ async def modify_doc_text(
         underline: Whether to underline text (True/False/None to leave unchanged)
         font_size: Font size in points
         font_family: Font family name (e.g., "Arial", "Times New Roman")
+        text_color: Foreground text color (#RRGGBB or RGB tuple/list)
+        background_color: Background/highlight color (#RRGGBB or RGB tuple/list)
 
     Returns:
         str: Confirmation message with operation details
     """
-    logger.info(f"[modify_doc_text] Doc={document_id}, start={start_index}, end={end_index}, text={text is not None}, formatting={any([bold, italic, underline, font_size, font_family])}")
+    logger.info(
+        f"[modify_doc_text] Doc={document_id}, start={start_index}, end={end_index}, text={text is not None}, "
+        f"formatting={any([bold, italic, underline, font_size, font_family, text_color, background_color])}"
+    )
 
     # Input validation
     validator = ValidationManager()
@@ -353,12 +360,17 @@ async def modify_doc_text(
         return f"Error: {error_msg}"
 
     # Validate that we have something to do
-    if text is None and not any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
-        return "Error: Must provide either 'text' to insert/replace, or formatting parameters (bold, italic, underline, font_size, font_family)."
+    if text is None and not any([
+        bold is not None, italic is not None, underline is not None,
+        font_size, font_family, text_color, background_color
+    ]):
+        return "Error: Must provide either 'text' to insert/replace, or formatting parameters (bold, italic, underline, font_size, font_family, text_color, background_color)."
 
     # Validate text formatting params if provided
-    if any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
-        is_valid, error_msg = validator.validate_text_formatting_params(bold, italic, underline, font_size, font_family)
+    if any([bold is not None, italic is not None, underline is not None, font_size, font_family, text_color, background_color]):
+        is_valid, error_msg = validator.validate_text_formatting_params(
+            bold, italic, underline, font_size, font_family, text_color, background_color
+        )
         if not is_valid:
             return f"Error: {error_msg}"
 
@@ -398,7 +410,7 @@ async def modify_doc_text(
             operations.append(f"Inserted text at index {start_index}")
 
     # Handle formatting
-    if any([bold is not None, italic is not None, underline is not None, font_size, font_family]):
+    if any([bold is not None, italic is not None, underline is not None, font_size, font_family, text_color, background_color]):
         # Adjust range for formatting based on text operations
         format_start = start_index
         format_end = end_index
@@ -419,7 +431,19 @@ async def modify_doc_text(
         if format_end is not None and format_end <= format_start:
             format_end = format_start + 1
 
-        requests.append(create_format_text_request(format_start, format_end, bold, italic, underline, font_size, font_family))
+        requests.append(
+            create_format_text_request(
+                format_start,
+                format_end,
+                bold,
+                italic,
+                underline,
+                font_size,
+                font_family,
+                text_color,
+                background_color
+            )
+        )
 
         format_details = []
         if bold is not None:
@@ -432,6 +456,10 @@ async def modify_doc_text(
             format_details.append(f"font_size={font_size}")
         if font_family:
             format_details.append(f"font_family={font_family}")
+        if text_color:
+            format_details.append(f"text_color={text_color}")
+        if background_color:
+            format_details.append(f"background_color={background_color}")
 
         operations.append(f"Applied formatting ({', '.join(format_details)}) to range {format_start}-{format_end}")
 

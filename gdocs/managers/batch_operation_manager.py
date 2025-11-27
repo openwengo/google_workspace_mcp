@@ -170,7 +170,8 @@ class BatchOperationManager:
             request = create_format_text_request(
                 op['start_index'], op['end_index'],
                 op.get('bold'), op.get('italic'), op.get('underline'),
-                op.get('font_size'), op.get('font_family')
+                op.get('font_size'), op.get('font_family'),
+                op.get('text_color'), op.get('background_color')
             )
             
             if not request:
@@ -180,7 +181,8 @@ class BatchOperationManager:
             format_changes = []
             for param, name in [
                 ('bold', 'bold'), ('italic', 'italic'), ('underline', 'underline'),
-                ('font_size', 'font size'), ('font_family', 'font family')
+                ('font_size', 'font size'), ('font_family', 'font family'),
+                ('text_color', 'text color'), ('background_color', 'background color')
             ]:
                 if op.get(param) is not None:
                     value = f"{op[param]}pt" if param == 'font_size' else op[param]
@@ -278,7 +280,7 @@ class BatchOperationManager:
                 },
                 'format_text': {
                     'required': ['start_index', 'end_index'],
-                    'optional': ['bold', 'italic', 'underline', 'font_size', 'font_family'],
+                    'optional': ['bold', 'italic', 'underline', 'font_size', 'font_family', 'text_color', 'background_color'],
                     'description': 'Apply formatting to text range'
                 },
                 'insert_table': {

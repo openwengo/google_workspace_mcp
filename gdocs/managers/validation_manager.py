@@ -119,7 +119,9 @@ class ValidationManager:
         italic: Optional[bool] = None,
         underline: Optional[bool] = None,
         font_size: Optional[int] = None,
-        font_family: Optional[str] = None
+        font_family: Optional[str] = None,
+        text_color: Optional[Any] = None,
+        background_color: Optional[Any] = None
     ) -> Tuple[bool, str]:
         """
         Validate text formatting parameters.
@@ -130,14 +132,18 @@ class ValidationManager:
             underline: Underline setting
             font_size: Font size in points
             font_family: Font family name
+            text_color: Text color in hex or RGB tuple/list
+            background_color: Background color in hex or RGB tuple/list
             
         Returns:
             Tuple of (is_valid, error_message)
         """
         # Check if at least one formatting option is provided
-        formatting_params = [bold, italic, underline, font_size, font_family]
+        formatting_params = [
+            bold, italic, underline, font_size, font_family, text_color, background_color
+        ]
         if all(param is None for param in formatting_params):
-            return False, "At least one formatting parameter must be provided (bold, italic, underline, font_size, or font_family)"
+            return False, "At least one formatting parameter must be provided (bold, italic, underline, font_size, font_family, text_color, or background_color)"
         
         # Validate boolean parameters
         for param, name in [(bold, 'bold'), (italic, 'italic'), (underline, 'underline')]:
@@ -160,8 +166,53 @@ class ValidationManager:
             
             if not font_family.strip():
                 return False, "font_family cannot be empty"
+
+        # Validate colors
+        is_valid, error_msg = self.validate_color_param(text_color, "text_color")
+        if not is_valid:
+            return False, error_msg
+
+        is_valid, error_msg = self.validate_color_param(background_color, "background_color")
+        if not is_valid:
+            return False, error_msg
         
         return True, ""
+
+    def validate_color_param(self, color: Any, param_name: str) -> Tuple[bool, str]:
+        """
+        Validate color parameters (hex string or RGB tuple/list).
+        """
+        if color is None:
+            return True, ""
+
+        if isinstance(color, str):
+            hex_color = color.lstrip('#')
+            if len(hex_color) != 6 or any(c not in "0123456789abcdefABCDEF" for c in hex_color):
+                return False, f"{param_name} must be a hex string like '#RRGGBB' or 'RRGGBB'"
+            return True, ""
+
+        if isinstance(color, (list, tuple)):
+            if len(color) != 3:
+                return False, f"{param_name} tuple/list must have exactly 3 components"
+
+            for i, component in enumerate(color):
+                comp_name = f"{param_name}[{i}]"
+                if isinstance(component, bool):
+                    return False, f"{comp_name} cannot be a boolean"
+
+                if isinstance(component, int):
+                    if component < 0 or component > 255:
+                        return False, f"{comp_name} integer values must be between 0 and 255"
+                elif isinstance(component, (float, int)):
+                    component = float(component)
+                    if component < 0 or component > 1:
+                        return False, f"{comp_name} float values must be between 0 and 1"
+                else:
+                    return False, f"{comp_name} must be an int (0-255) or float (0-1), got {type(component).__name__}"
+
+            return True, ""
+
+        return False, f"{param_name} must be a hex string or RGB tuple/list like [255, 0, 0] or [1, 0, 0]"
     
     def validate_index(self, index: int, context: str = "Index") -> Tuple[bool, str]:
         """
