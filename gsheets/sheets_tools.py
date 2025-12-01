@@ -13,7 +13,7 @@ from typing import List, Optional, Union
 
 from auth.service_decorator import require_google_service
 from core.server import server
-from core.utils import handle_http_errors
+from core.utils import handle_http_errors, UserInputError
 from core.comments import create_comment_tools
 
 # Configure module logger
@@ -40,11 +40,12 @@ def _parse_a1_range(range_name: str, sheets: List[dict]) -> dict:
     """
     if "!" in range_name:
         sheet_name, a1_range = range_name.split("!", 1)
+        sheet_name = sheet_name.strip()
     else:
         sheet_name, a1_range = None, range_name
 
     if not sheets:
-        raise Exception("Spreadsheet has no sheets to format.")
+        raise UserInputError("Spreadsheet has no sheets to format.")
 
     target_sheet = None
     if sheet_name:
@@ -53,7 +54,14 @@ def _parse_a1_range(range_name: str, sheets: List[dict]) -> dict:
                 target_sheet = sheet
                 break
         if target_sheet is None:
-            raise Exception(f"Sheet '{sheet_name}' not found in spreadsheet.")
+            available_titles = [
+                sheet.get("properties", {}).get("title", "Untitled")
+                for sheet in sheets
+            ]
+            available_list = ", ".join(available_titles) if available_titles else "none"
+            raise UserInputError(
+                f"Sheet '{sheet_name}' not found in spreadsheet. Available sheets: {available_list}."
+            )
     else:
         target_sheet = sheets[0]
 
@@ -61,7 +69,7 @@ def _parse_a1_range(range_name: str, sheets: List[dict]) -> dict:
     sheet_id = props.get("sheetId")
 
     if not a1_range:
-        raise Exception("Range must not be empty.")
+        raise UserInputError("Range must not be empty.")
 
     if ":" in a1_range:
         start, end = a1_range.split(":", 1)
@@ -71,7 +79,7 @@ def _parse_a1_range(range_name: str, sheets: List[dict]) -> dict:
     def parse_part(part: str) -> tuple[Optional[int], Optional[int]]:
         match = A1_PART_REGEX.match(part)
         if not match:
-            raise Exception(f"Invalid A1 range part: '{part}'.")
+            raise UserInputError(f"Invalid A1 range part: '{part}'.")
         col_letters, row_digits = match.groups()
         col_idx = _column_to_index(col_letters) if col_letters else None
         row_idx = int(row_digits) - 1 if row_digits else None
@@ -105,14 +113,14 @@ def _parse_hex_color(color: Optional[str]) -> Optional[dict]:
         trimmed = trimmed[1:]
 
     if len(trimmed) not in (6, 8):
-        raise Exception(f"Color '{color}' must be in format #RRGGBB or RRGGBB.")
+        raise UserInputError(f"Color '{color}' must be in format #RRGGBB or RRGGBB.")
 
     try:
         red = int(trimmed[0:2], 16) / 255
         green = int(trimmed[2:4], 16) / 255
         blue = int(trimmed[4:6], 16) / 255
     except ValueError as exc:
-        raise Exception(f"Color '{color}' is not valid hex.") from exc
+        raise UserInputError(f"Color '{color}' is not valid hex.") from exc
 
     return {"red": red, "green": green, "blue": blue}
 
@@ -318,12 +326,12 @@ async def modify_sheet_values(
             values = parsed_values
             logger.info(f"[modify_sheet_values] Parsed JSON string to Python list with {len(values)} rows")
         except json.JSONDecodeError as e:
-            raise Exception(f"Invalid JSON format for values: {e}")
+            raise UserInputError(f"Invalid JSON format for values: {e}")
         except ValueError as e:
-            raise Exception(f"Invalid values structure: {e}")
+            raise UserInputError(f"Invalid values structure: {e}")
 
     if not clear_values and not values:
-        raise Exception("Either 'values' must be provided or 'clear_values' must be True.")
+        raise UserInputError("Either 'values' must be provided or 'clear_values' must be True.")
 
     if clear_values:
         result = await asyncio.to_thread(
@@ -432,7 +440,7 @@ async def format_sheet_range(
     )
 
     if not any([background_color, text_color, number_format_type]):
-        raise Exception(
+        raise UserInputError(
             "Provide at least one of background_color, text_color, or number_format_type."
         )
 
@@ -454,7 +462,7 @@ async def format_sheet_range(
         }
         normalized_type = number_format_type.upper()
         if normalized_type not in allowed_number_formats:
-            raise Exception(
+            raise UserInputError(
                 f"number_format_type must be one of {sorted(allowed_number_formats)}."
             )
         number_format = {"type": normalized_type}
@@ -487,7 +495,7 @@ async def format_sheet_range(
         fields.append("userEnteredFormat.numberFormat")
 
     if not user_entered_format:
-        raise Exception(
+        raise UserInputError(
             "No formatting applied. Verify provided colors or number format."
         )
 
@@ -566,11 +574,11 @@ async def add_conditional_formatting(
     )
 
     if not background_color and not text_color:
-        raise Exception("Provide at least one of background_color or text_color for the rule format.")
+        raise UserInputError("Provide at least one of background_color or text_color for the rule format.")
 
     cond_type_normalized = condition_type.upper()
     if cond_type_normalized not in CONDITION_TYPES:
-        raise Exception(f"condition_type must be one of {sorted(CONDITION_TYPES)}.")
+        raise UserInputError(f"condition_type must be one of {sorted(CONDITION_TYPES)}.")
 
     metadata = await asyncio.to_thread(
         service.spreadsheets()

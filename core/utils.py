@@ -22,6 +22,11 @@ class TransientNetworkError(Exception):
     pass
 
 
+class UserInputError(Exception):
+    """Raised for user-facing input/validation errors that shouldn't be retried."""
+
+    pass
+
 def check_credentials_directory_permissions(credentials_dir: str = None) -> None:
     """
     Check if the service has appropriate permissions to create and write to the .credentials directory.
@@ -276,6 +281,10 @@ def handle_http_errors(tool_name: str, is_read_only: bool = False, service_type:
                             f"A transient SSL error occurred in '{tool_name}' after {max_retries} attempts. "
                             "This is likely a temporary network or certificate issue. Please try again shortly."
                         ) from e
+                except UserInputError as e:
+                    message = f"Input error in {tool_name}: {e}"
+                    logger.warning(message)
+                    raise Exception(message) from e
                 except HttpError as error:
                     user_google_email = kwargs.get("user_google_email", "N/A")
                     error_details = str(error)
