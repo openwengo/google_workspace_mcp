@@ -68,11 +68,17 @@ def _get_auth_context(
     Returns:
         Tuple of (authenticated_user, auth_method, mcp_session_id)
     """
+    ctx = None
+    authenticated_user: Optional[str] = None
+    auth_method: Optional[str] = None
+    mcp_session_id: Optional[str] = None
+
     try:
         ctx = get_context()
-        if not ctx:
-            return None, None, None
+    except Exception as e:
+        logger.debug(f"[{tool_name}] Could not get FastMCP context: {e}")
 
+    if ctx:
         authenticated_user = ctx.get_state("authenticated_user_email")
         auth_method = ctx.get_state("authenticated_via")
         mcp_session_id = ctx.session_id if hasattr(ctx, "session_id") else None
@@ -83,11 +89,33 @@ def _get_auth_context(
         logger.info(
             f"[{tool_name}] Auth from middleware: authenticated_user={authenticated_user}, auth_method={auth_method}, session_id={mcp_session_id}"
         )
-        return authenticated_user, auth_method, mcp_session_id
 
-    except Exception as e:
-        logger.debug(f"[{tool_name}] Could not get FastMCP context: {e}")
-        return None, None, None
+    # Fallback: derive the authenticated user directly from the validated access token.
+    # FastMCP's GoogleProvider (OAuth proxy) may issue FastMCP JWTs to clients and
+    # only expose the upstream Google identity via `get_access_token().claims`.
+    if not authenticated_user:
+        try:
+            access_token = get_access_token()
+            token_email = None
+            if access_token and getattr(access_token, "claims", None):
+                token_email = access_token.claims.get("email")
+
+            if token_email:
+                authenticated_user = token_email
+                auth_method = auth_method or "fastmcp_access_token"
+
+                if ctx and hasattr(ctx, "set_state"):
+                    ctx.set_state("authenticated_user_email", authenticated_user)
+                    ctx.set_state("authenticated_via", auth_method)
+        except Exception as e:
+            logger.debug(
+                f"[{tool_name}] Could not derive authenticated user from access token: {e}"
+            )
+
+    logger.debug(
+        f"[{tool_name}] Auth context: {authenticated_user or 'none'} via {auth_method or 'none'}"
+    )
+    return authenticated_user, auth_method, mcp_session_id
 
 
 def _detect_oauth_version(
@@ -332,8 +360,17 @@ def _extract_oauth21_user_email(
         Exception: If no authenticated user found in OAuth 2.1 mode
     """
     if not authenticated_user:
+        try:
+            access_token = get_access_token()
+            if access_token and getattr(access_token, "claims", None):
+                token_email = access_token.claims.get("email")
+                if token_email:
+                    return token_email
+        except Exception:
+            pass
+
         raise Exception(
-            f"OAuth 2.1 mode requires an authenticated user for {func_name}, but none was found."
+            f"OAuth 2.1 mode requires an authenticated user email for {func_name}, but none was found in context or token claims."
         )
     return authenticated_user
 
@@ -780,9 +817,8 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
                     resolved_scopes = _resolve_scopes(scopes)
 
                     try:
-                        # Detect OAuth version (simplified for multiple services)
-                        use_oauth21 = (
-                            is_oauth21_enabled() and authenticated_user is not None
+                        use_oauth21 = _detect_oauth_version(
+                            authenticated_user, mcp_session_id, tool_name
                         )
 
                         # In OAuth 2.0 mode, we may need to override user_google_email
