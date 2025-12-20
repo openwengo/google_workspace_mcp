@@ -6,63 +6,35 @@ to simplify the implementation of document editing tools.
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-ColorComponent = Union[int, float]
-RgbColor = Tuple[ColorComponent, ColorComponent, ColorComponent]
-ColorInput = Union[str, RgbColor]
-
-
 def _normalize_color(
-    color: Optional[ColorInput], param_name: str
+    color: Optional[str], param_name: str
 ) -> Optional[Dict[str, float]]:
     """
     Normalize a user-supplied color into Docs API rgbColor format.
 
-    Supports:
-    - Hex strings: "#RRGGBB" or "RRGGBB"
-    - Tuple/list of 3 ints (0-255) or floats (0-1)
+    Supports only hex strings in the form "#RRGGBB".
     """
     if color is None:
         return None
 
-    def _to_component(value: Any) -> float:
-        if isinstance(value, bool):
-            raise ValueError(f"{param_name} components cannot be boolean values")
-        if isinstance(value, int):
-            if value < 0 or value > 255:
-                raise ValueError(
-                    f"{param_name} components must be 0-255 when using integers"
-                )
-            return value / 255
-        if isinstance(value, float):
-            if value < 0 or value > 1:
-                raise ValueError(
-                    f"{param_name} components must be between 0 and 1 when using floats"
-                )
-            return value
-        raise ValueError(f"{param_name} components must be int (0-255) or float (0-1)")
+    if not isinstance(color, str):
+        raise ValueError(f"{param_name} must be a hex string like '#RRGGBB'")
 
-    if isinstance(color, str):
-        hex_color = color.lstrip("#")
-        if len(hex_color) != 6 or any(
-            c not in "0123456789abcdefABCDEF" for c in hex_color
-        ):
-            raise ValueError(f"{param_name} must be a hex string like '#RRGGBB'")
-        r = int(hex_color[0:2], 16) / 255
-        g = int(hex_color[2:4], 16) / 255
-        b = int(hex_color[4:6], 16) / 255
-        return {"red": r, "green": g, "blue": b}
+    if len(color) != 7 or not color.startswith("#"):
+        raise ValueError(f"{param_name} must be a hex string like '#RRGGBB'")
 
-    if isinstance(color, (list, tuple)) and len(color) == 3:
-        r = _to_component(color[0])
-        g = _to_component(color[1])
-        b = _to_component(color[2])
-        return {"red": r, "green": g, "blue": b}
+    hex_color = color[1:]
+    if any(c not in "0123456789abcdefABCDEF" for c in hex_color):
+        raise ValueError(f"{param_name} must be a hex string like '#RRGGBB'")
 
-    raise ValueError(f"{param_name} must be a hex string or RGB tuple/list")
+    r = int(hex_color[0:2], 16) / 255
+    g = int(hex_color[2:4], 16) / 255
+    b = int(hex_color[4:6], 16) / 255
+    return {"red": r, "green": g, "blue": b}
 
 
 def build_text_style(
@@ -71,8 +43,8 @@ def build_text_style(
     underline: bool = None,
     font_size: int = None,
     font_family: str = None,
-    text_color: Optional[ColorInput] = None,
-    background_color: Optional[ColorInput] = None,
+    text_color: str = None,
+    background_color: str = None,
 ) -> tuple[Dict[str, Any], list[str]]:
     """
     Build text style object for Google Docs API requests.
@@ -83,8 +55,8 @@ def build_text_style(
         underline: Whether text should be underlined
         font_size: Font size in points
         font_family: Font family name
-        text_color: Text color as hex string or RGB tuple/list
-        background_color: Background (highlight) color as hex string or RGB tuple/list
+        text_color: Text color as hex string "#RRGGBB"
+        background_color: Background (highlight) color as hex string "#RRGGBB"
 
     Returns:
         Tuple of (text_style_dict, list_of_field_names)
@@ -187,8 +159,8 @@ def create_format_text_request(
     underline: bool = None,
     font_size: int = None,
     font_family: str = None,
-    text_color: Optional[ColorInput] = None,
-    background_color: Optional[ColorInput] = None,
+    text_color: str = None,
+    background_color: str = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Create an updateTextStyle request for Google Docs API.
@@ -201,8 +173,8 @@ def create_format_text_request(
         underline: Whether text should be underlined
         font_size: Font size in points
         font_family: Font family name
-        text_color: Text color as hex string or RGB tuple/list
-        background_color: Background (highlight) color as hex string or RGB tuple/list
+        text_color: Text color as hex string "#RRGGBB"
+        background_color: Background (highlight) color as hex string "#RRGGBB"
 
     Returns:
         Dictionary representing the updateTextStyle request, or None if no styles provided
@@ -333,7 +305,7 @@ def create_bullet_list_request(
     }
 
 
-def validate_operation(operation: Dict[str, Any]) -> Tuple[bool, str]:
+def validate_operation(operation: Dict[str, Any]) -> tuple[bool, str]:
     """
     Validate a batch operation dictionary.
 

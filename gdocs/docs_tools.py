@@ -19,7 +19,6 @@ from core.comments import create_comment_tools
 
 # Import helper functions for document operations
 from gdocs.docs_helpers import (
-    ColorInput,
     create_insert_text_request,
     create_delete_range_request,
     create_format_text_request,
@@ -366,8 +365,8 @@ async def modify_doc_text(
     underline: bool = None,
     font_size: int = None,
     font_family: str = None,
-    text_color: Optional[ColorInput] = None,
-    background_color: Optional[ColorInput] = None,
+    text_color: str = None,
+    background_color: str = None,
 ) -> str:
     """
     Modifies text in a Google Doc - can insert/replace text and/or apply formatting in a single operation.
@@ -383,8 +382,8 @@ async def modify_doc_text(
         underline: Whether to underline text (True/False/None to leave unchanged)
         font_size: Font size in points
         font_family: Font family name (e.g., "Arial", "Times New Roman")
-        text_color: Foreground text color (#RRGGBB or RGB tuple/list)
-        background_color: Background/highlight color (#RRGGBB or RGB tuple/list)
+        text_color: Foreground text color (#RRGGBB)
+        background_color: Background/highlight color (#RRGGBB)
 
     Returns:
         str: Confirmation message with operation details
