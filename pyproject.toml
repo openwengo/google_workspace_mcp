@@ -16,9 +16,11 @@ dependencies = [
  "google-auth-httplib2>=0.2.0",
  "google-auth-oauthlib>=1.2.2",
  "httpx>=0.28.1",
+ "py-key-value-aio[valkey]>=0.3.0",
  "pyjwt>=2.10.1",
  "python-dotenv>=1.1.0",
  "pyyaml>=6.0.2",
+ "cryptography>=45.0.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

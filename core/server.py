@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List, Optional
 from importlib import metadata
 
@@ -104,6 +105,177 @@ def configure_server_for_http():
         try:
             required_scopes: List[str] = sorted(get_current_scopes())
 
+            client_storage = None
+            jwt_signing_key_override = (
+                os.getenv("FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY", "").strip()
+                or None
+            )
+            storage_backend = os.getenv(
+                "WORKSPACE_MCP_OAUTH_PROXY_STORAGE_BACKEND", ""
+            ).strip()
+            valkey_host = os.getenv("WORKSPACE_MCP_OAUTH_PROXY_VALKEY_HOST", "").strip()
+            use_valkey = storage_backend.lower() == "valkey" or bool(valkey_host)
+
+            if use_valkey:
+                try:
+                    from key_value.aio.stores.valkey import ValkeyStore
+                    from key_value.aio.wrappers.encryption import (
+                        FernetEncryptionWrapper,
+                    )
+                    from cryptography.fernet import Fernet
+                    from fastmcp.server.auth.jwt_issuer import derive_jwt_key
+
+                    valkey_port_raw = os.getenv(
+                        "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_PORT", "6379"
+                    ).strip()
+                    valkey_db_raw = os.getenv(
+                        "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_DB", "0"
+                    ).strip()
+
+                    valkey_port = int(valkey_port_raw)
+                    valkey_db = int(valkey_db_raw)
+                    valkey_use_tls_raw = os.getenv(
+                        "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_USE_TLS", ""
+                    ).strip()
+                    if valkey_use_tls_raw:
+                        valkey_use_tls = valkey_use_tls_raw.lower() in (
+                            "1",
+                            "true",
+                            "yes",
+                            "on",
+                        )
+                    else:
+                        valkey_use_tls = valkey_port == 6380
+
+                    valkey_request_timeout_ms_raw = os.getenv(
+                        "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_REQUEST_TIMEOUT_MS", ""
+                    ).strip()
+                    valkey_connection_timeout_ms_raw = os.getenv(
+                        "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_CONNECTION_TIMEOUT_MS", ""
+                    ).strip()
+
+                    valkey_request_timeout_ms = (
+                        int(valkey_request_timeout_ms_raw)
+                        if valkey_request_timeout_ms_raw
+                        else None
+                    )
+                    valkey_connection_timeout_ms = (
+                        int(valkey_connection_timeout_ms_raw)
+                        if valkey_connection_timeout_ms_raw
+                        else None
+                    )
+
+                    valkey_username = (
+                        os.getenv(
+                            "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_USERNAME", ""
+                        ).strip()
+                        or None
+                    )
+                    valkey_password = (
+                        os.getenv(
+                            "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_PASSWORD", ""
+                        ).strip()
+                        or None
+                    )
+
+                    if not valkey_host:
+                        valkey_host = "localhost"
+
+                    client_storage = ValkeyStore(
+                        host=valkey_host,
+                        port=valkey_port,
+                        db=valkey_db,
+                        username=valkey_username,
+                        password=valkey_password,
+                    )
+
+                    # Configure TLS and timeouts on the underlying Glide client config.
+                    # ValkeyStore currently doesn't expose these settings directly.
+                    glide_config = getattr(client_storage, "_client_config", None)
+                    if glide_config is not None:
+                        glide_config.use_tls = valkey_use_tls
+
+                        is_remote_host = valkey_host not in {"localhost", "127.0.0.1"}
+                        if valkey_request_timeout_ms is None and (
+                            valkey_use_tls or is_remote_host
+                        ):
+                            # Glide defaults to 250ms if unset; increase for remote/TLS endpoints.
+                            valkey_request_timeout_ms = 5000
+                        if valkey_request_timeout_ms is not None:
+                            glide_config.request_timeout = valkey_request_timeout_ms
+
+                        if valkey_connection_timeout_ms is None and (
+                            valkey_use_tls or is_remote_host
+                        ):
+                            valkey_connection_timeout_ms = 10000
+                        if valkey_connection_timeout_ms is not None:
+                            from glide_shared.config import (
+                                AdvancedGlideClientConfiguration,
+                            )
+
+                            glide_config.advanced_config = (
+                                AdvancedGlideClientConfiguration(
+                                    connection_timeout=valkey_connection_timeout_ms
+                                )
+                            )
+
+                    if jwt_signing_key_override:
+                        if len(jwt_signing_key_override) < 12:
+                            logger.warning(
+                                "OAuth 2.1: FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY is less than 12 characters; "
+                                "use a longer secret to improve key derivation strength."
+                            )
+                        jwt_signing_key = derive_jwt_key(
+                            low_entropy_material=jwt_signing_key_override,
+                            salt="fastmcp-jwt-signing-key",
+                        )
+                    else:
+                        jwt_signing_key = derive_jwt_key(
+                            high_entropy_material=config.client_secret,
+                            salt="fastmcp-jwt-signing-key",
+                        )
+
+                    storage_encryption_key = derive_jwt_key(
+                        high_entropy_material=jwt_signing_key.decode(),
+                        salt="fastmcp-storage-encryption-key",
+                    )
+
+                    client_storage = FernetEncryptionWrapper(
+                        key_value=client_storage,
+                        fernet=Fernet(key=storage_encryption_key),
+                    )
+                    logger.info(
+                        "OAuth 2.1: Using ValkeyStore for FastMCP OAuth proxy client_storage (host=%s, port=%s, db=%s, tls=%s)",
+                        valkey_host,
+                        valkey_port,
+                        valkey_db,
+                        valkey_use_tls,
+                    )
+                    if valkey_request_timeout_ms is not None:
+                        logger.info(
+                            "OAuth 2.1: Valkey request timeout set to %sms",
+                            valkey_request_timeout_ms,
+                        )
+                    if valkey_connection_timeout_ms is not None:
+                        logger.info(
+                            "OAuth 2.1: Valkey connection timeout set to %sms",
+                            valkey_connection_timeout_ms,
+                        )
+                    logger.info(
+                        "OAuth 2.1: Applied Fernet encryption wrapper to Valkey client_storage (key derived from FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY or GOOGLE_OAUTH_CLIENT_SECRET)."
+                    )
+                except ImportError as exc:
+                    logger.warning(
+                        "OAuth 2.1: Valkey client_storage requested but Valkey dependencies are not installed (%s). "
+                        "Install 'py-key-value-aio[valkey]' (includes 'valkey-glide') or unset WORKSPACE_MCP_OAUTH_PROXY_STORAGE_BACKEND/WORKSPACE_MCP_OAUTH_PROXY_VALKEY_HOST.",
+                        exc,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "OAuth 2.1: Invalid Valkey configuration; falling back to default storage (%s).",
+                        exc,
+                    )
+
             # Check if external OAuth provider is configured
             if config.is_external_oauth21_provider():
                 # External OAuth mode: use custom provider that handles ya29.* access tokens
@@ -132,6 +304,8 @@ def configure_server_for_http():
                     base_url=config.get_oauth_base_url(),
                     redirect_path=config.redirect_path,
                     required_scopes=required_scopes,
+                    client_storage=client_storage,
+                    jwt_signing_key=jwt_signing_key_override,
                 )
                 # Enable protocol-level auth
                 server.auth = provider
