@@ -14,7 +14,11 @@ from auth.oauth21_session_store import (
     get_oauth21_session_store,
     ensure_session_from_access_token,
 )
-from auth.oauth_config import is_oauth21_enabled, get_oauth_config
+from auth.oauth_config import (
+    is_oauth21_enabled,
+    get_oauth_config,
+    is_external_oauth21_provider,
+)
 from core.context import set_fastmcp_session_id
 from auth.scopes import (
     GMAIL_READONLY_SCOPE,
@@ -131,7 +135,9 @@ def _detect_oauth_version(
             )
             return True
     except Exception as e:
-        logger.debug(f"[{tool_name}] Could not inspect access token for OAuth mode: {e}")
+        logger.debug(
+            f"[{tool_name}] Could not inspect access token for OAuth mode: {e}"
+        )
 
     # Only use version detection for unauthenticated requests
     config = get_oauth_config()
@@ -514,6 +520,26 @@ def _handle_token_refresh_error(
         )
 
         service_display_name = f"Google {service_name.title()}"
+        if is_oauth21_enabled():
+            if is_external_oauth21_provider():
+                oauth21_step = (
+                    "Provide a valid OAuth 2.1 bearer token in the Authorization header"
+                )
+            else:
+                oauth21_step = "Sign in through your MCP client's OAuth 2.1 flow"
+
+            return (
+                f"**Authentication Required: Token Expired/Revoked for {service_display_name}**\n\n"
+                f"Your Google authentication token for {user_email} has expired or been revoked. "
+                f"This commonly happens when:\n"
+                f"- The token has been unused for an extended period\n"
+                f"- You've changed your Google account password\n"
+                f"- You've revoked access to the application\n\n"
+                f"**To resolve this, please:**\n"
+                f"1. {oauth21_step}\n"
+                f"2. Retry your original command\n\n"
+                f"The application will automatically use the new credentials once authentication is complete."
+            )
 
         return (
             f"**Authentication Required: Token Expired/Revoked for {service_display_name}**\n\n"
@@ -531,6 +557,16 @@ def _handle_token_refresh_error(
     else:
         # Handle other types of refresh errors
         logger.error(f"Unexpected refresh error for user {user_email}: {error}")
+        if is_oauth21_enabled():
+            if is_external_oauth21_provider():
+                return (
+                    f"Authentication error occurred for {user_email}. "
+                    "Please provide a valid OAuth 2.1 bearer token and retry."
+                )
+            return (
+                f"Authentication error occurred for {user_email}. "
+                "Please sign in via your MCP client's OAuth 2.1 flow and retry."
+            )
         return (
             f"Authentication error occurred for {user_email}. "
             f"Please try running `start_google_auth` with your email and the appropriate service name to reauthenticate."

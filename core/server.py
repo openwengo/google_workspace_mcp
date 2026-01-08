@@ -13,6 +13,7 @@ from fastmcp.server.auth.providers.google import GoogleProvider
 
 from auth.oauth21_session_store import get_oauth21_session_store, set_auth_provider
 from auth.google_auth import handle_auth_callback, start_auth_flow, check_client_secrets
+from auth.oauth_config import is_oauth21_enabled, is_external_oauth21_provider
 from auth.mcp_session_middleware import MCPSessionMiddleware
 from auth.oauth_responses import (
     create_error_response,
@@ -518,9 +519,9 @@ async def start_google_auth(
     """
     Manually initiate Google OAuth authentication flow.
 
-    NOTE: This tool should typically NOT be called directly. The authentication system
-    automatically handles credential checks and prompts for authentication when needed.
-    Only use this tool if:
+    NOTE: This is a legacy OAuth 2.0 tool and is disabled when OAuth 2.1 is enabled.
+    The authentication system automatically handles credential checks and prompts for
+    authentication when needed. Only use this tool if:
     1. You need to re-authenticate with different credentials
     2. You want to proactively authenticate before using other tools
     3. The automatic authentication flow failed and you need to retry
@@ -528,6 +529,19 @@ async def start_google_auth(
     In most cases, simply try calling the Google Workspace tool you need - it will
     automatically handle authentication if required.
     """
+    if is_oauth21_enabled():
+        if is_external_oauth21_provider():
+            return (
+                "start_google_auth is disabled when OAuth 2.1 is enabled. "
+                "Provide a valid OAuth 2.1 bearer token in the Authorization header "
+                "and retry the original tool."
+            )
+        return (
+            "start_google_auth is disabled when OAuth 2.1 is enabled. "
+            "Authenticate through your MCP client's OAuth 2.1 flow and retry the "
+            "original tool."
+        )
+
     if not user_google_email:
         raise ValueError("user_google_email must be provided.")
 
