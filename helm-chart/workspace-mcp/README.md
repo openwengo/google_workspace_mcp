@@ -37,6 +37,7 @@ The following table lists the configurable parameters and their default values:
 | `secrets.googleOAuth.clientSecret` | Google OAuth Client Secret | `""` (required) |
 | `secrets.googleOAuth.userEmail` | Default user email for single-user mode | `""` |
 | `singleUserMode` | Enable single-user mode | `false` |
+| `lifecycle` | Container lifecycle hooks (e.g., `preStop.exec.command`) | `{}` |
 | `tools.enabled` | List of tools to enable | `[]` (all tools enabled) |
 | `env.MCP_ENABLE_OAUTH21` | Enable OAuth 2.1 support | `"false"` |
 | `service.type` | Kubernetes service type | `ClusterIP` |
