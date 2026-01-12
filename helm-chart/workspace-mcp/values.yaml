@@ -98,6 +98,8 @@ env:
 secrets:
   # Google OAuth credentials (required)
   googleOAuth:
+    # Optional: reference an existing secret that provides the keys below
+    existingSecretName: ""
     # Set these values or create secret manually
     clientId: ""
     clientSecret: ""

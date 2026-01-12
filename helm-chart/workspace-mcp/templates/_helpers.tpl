@@ -60,3 +60,14 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Resolve the OAuth secret name, allowing overrides with an existing secret.
+*/}}
+{{- define "workspace-mcp.oauthSecretName" -}}
+{{- if .Values.secrets.googleOAuth.existingSecretName }}
+{{- .Values.secrets.googleOAuth.existingSecretName }}
+{{- else }}
+{{- printf "%s-oauth" (include "workspace-mcp.fullname" .) }}
+{{- end }}
+{{- end }}
