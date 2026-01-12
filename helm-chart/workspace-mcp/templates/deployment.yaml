@@ -105,6 +105,10 @@ spec:
           args:
             - "uv run main.py --transport streamable-http {{- if .Values.singleUserMode }} --single-user{{- end }} ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"
           {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
