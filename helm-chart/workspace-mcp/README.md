@@ -30,6 +30,7 @@ The following table lists the configurable parameters and their default values:
 | `image.repository` | Container image repository | `workspace-mcp` |
 | `image.tag` | Container image tag | `""` (uses Chart.AppVersion) |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `secrets.googleOAuth.existingSecretName` | Name of an existing secret to use (must include `client-id`, `client-secret`, optionally `user-email`) | `""` |
 | `secrets.googleOAuth.clientId` | Google OAuth Client ID | `""` (required) |
 | `secrets.googleOAuth.clientSecret` | Google OAuth Client Secret | `""` (required) |
 | `secrets.googleOAuth.userEmail` | Default user email for single-user mode | `""` |
@@ -43,6 +44,8 @@ The following table lists the configurable parameters and their default values:
 | `resources.limits.memory` | Memory limit | `512Mi` |
 | `autoscaling.enabled` | Enable HPA | `false` |
 
+Values placed under `env` support Helm templating, letting you reference release metadata (for example, `env.WORKSPACE_MCP_BASE_URI="http://{{ include \"workspace-mcp.fullname\" . }}.{{ .Release.Namespace }}.svc.cluster.local"`).
+
 ## Google OAuth Setup
 
 Before deploying, you need to set up Google OAuth credentials:
@@ -51,6 +54,8 @@ Before deploying, you need to set up Google OAuth credentials:
 2. Enable the required Google Workspace APIs
 3. Create OAuth 2.0 credentials (Web application)
 4. Set authorized redirect URI: `http://your-domain:8000/oauth2callback`
+
+If you prefer to manage the secret yourself, create a Kubernetes secret containing the keys `client-id`, `client-secret`, and optionally `user-email`, then install the chart with `--set secrets.googleOAuth.existingSecretName="your-secret-name"`. When this value is set, the chart will reference your existing secret instead of creating one.
 
 ## Examples
 
