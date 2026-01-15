@@ -38,6 +38,9 @@ The following table lists the configurable parameters and their default values:
 | `secrets.googleOAuth.userEmail` | Default user email for single-user mode | `""` |
 | `singleUserMode` | Enable single-user mode | `false` |
 | `lifecycle` | Container lifecycle hooks (e.g., `preStop.exec.command`) | `{}` |
+| `healthCheck` | Shared defaults for liveness/readiness probes | `{"enabled":true,"path":"/health","initialDelaySeconds":30,"periodSeconds":30,"timeoutSeconds":10,"successThreshold":1,"failureThreshold":3}` |
+| `livenessProbe` | Liveness probe overrides (inherits `healthCheck`) | `{}` |
+| `readinessProbe` | Readiness probe overrides (inherits `healthCheck`) | `{}` |
 | `tools.enabled` | List of tools to enable | `[]` (all tools enabled) |
 | `env.MCP_ENABLE_OAUTH21` | Enable OAuth 2.1 support | `"false"` |
 | `service.type` | Kubernetes service type | `ClusterIP` |
@@ -131,9 +134,10 @@ If `tools.enabled` is empty or not set, all tools will be enabled.
 
 The chart includes health checks that verify the application is running correctly:
 
-- Liveness probe checks `/health` endpoint
-- Readiness probe ensures the service is ready to accept traffic
-- Configurable timing and thresholds via `healthCheck` values
+- Liveness probe checks `/health` by default
+- Readiness probe ensures the service is ready to accept traffic by default
+- Shared defaults live under `healthCheck`
+- Override per-probe settings with `livenessProbe` and `readinessProbe`
 
 ## Security
 
