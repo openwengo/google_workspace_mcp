@@ -1,5 +1,8 @@
 {{- $oauthSecretName := include "workspace-mcp.oauthSecretName" . }}
 {{- $envValues := .Values.env | default (dict) }}
+{{- $healthCheck := .Values.healthCheck | default (dict) }}
+{{- $livenessProbe := merge (dict) $healthCheck (default dict .Values.livenessProbe) }}
+{{- $readinessProbe := merge (dict) $healthCheck (default dict .Values.readinessProbe) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,25 +42,27 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
-          {{- if .Values.healthCheck.enabled }}
+          {{- if $livenessProbe.enabled }}
           livenessProbe:
             httpGet:
-              path: {{ .Values.healthCheck.path }}
+              path: {{ $livenessProbe.path }}
               port: http
-            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
-            successThreshold: {{ .Values.healthCheck.successThreshold }}
-            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+            initialDelaySeconds: {{ $livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $livenessProbe.timeoutSeconds }}
+            successThreshold: {{ $livenessProbe.successThreshold }}
+            failureThreshold: {{ $livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $readinessProbe.enabled }}
           readinessProbe:
             httpGet:
-              path: {{ .Values.healthCheck.path }}
+              path: {{ $readinessProbe.path }}
               port: http
-            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
-            successThreshold: {{ .Values.healthCheck.successThreshold }}
-            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+            initialDelaySeconds: {{ $readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $readinessProbe.timeoutSeconds }}
+            successThreshold: {{ $readinessProbe.successThreshold }}
+            failureThreshold: {{ $readinessProbe.failureThreshold }}
           {{- end }}
           env:
             # Google OAuth credentials from secret
