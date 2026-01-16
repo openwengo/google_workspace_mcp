@@ -38,9 +38,8 @@ The following table lists the configurable parameters and their default values:
 | `secrets.googleOAuth.userEmail` | Default user email for single-user mode | `""` |
 | `singleUserMode` | Enable single-user mode | `false` |
 | `lifecycle` | Container lifecycle hooks (e.g., `preStop.exec.command`) | `{}` |
-| `healthCheck` | Shared defaults for liveness/readiness probes | `{"enabled":true,"path":"/health","initialDelaySeconds":30,"periodSeconds":30,"timeoutSeconds":10,"successThreshold":1,"failureThreshold":3}` |
-| `livenessProbe` | Liveness probe overrides (inherits `healthCheck`) | `{}` |
-| `readinessProbe` | Readiness probe overrides (inherits `healthCheck`) | `{}` |
+| `livenessProbe` | Liveness probe configuration | `{"enabled":true,"path":"/health","initialDelaySeconds":30,"periodSeconds":30,"timeoutSeconds":10,"successThreshold":1,"failureThreshold":3}` |
+| `readinessProbe` | Readiness probe configuration | `{"enabled":true,"path":"/health","initialDelaySeconds":30,"periodSeconds":30,"timeoutSeconds":10,"successThreshold":1,"failureThreshold":3}` |
 | `tools.enabled` | List of tools to enable | `[]` (all tools enabled) |
 | `env.MCP_ENABLE_OAUTH21` | Enable OAuth 2.1 support | `"false"` |
 | `service.type` | Kubernetes service type | `ClusterIP` |
@@ -136,8 +135,7 @@ The chart includes health checks that verify the application is running correctl
 
 - Liveness probe checks `/health` by default
 - Readiness probe ensures the service is ready to accept traffic by default
-- Shared defaults live under `healthCheck`
-- Override per-probe settings with `livenessProbe` and `readinessProbe`
+- Configure probes independently via `livenessProbe` and `readinessProbe`
 
 ## Security
 
