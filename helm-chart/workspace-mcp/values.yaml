@@ -134,8 +134,8 @@ lifecycle: {}
   #   exec:
   #     command: ["sh", "-c", "sleep 10"]
 
-# Health check defaults (applied to both probes unless overridden)
-healthCheck:
+# Liveness probe configuration
+livenessProbe:
   enabled: true
   path: /health
   initialDelaySeconds: 30
@@ -144,25 +144,15 @@ healthCheck:
   successThreshold: 1
   failureThreshold: 3
 
-# Liveness probe overrides (inherits healthCheck when unset)
-livenessProbe:
-  # enabled: true
-  # path: /health
-  # initialDelaySeconds: 30
-  # periodSeconds: 30
-  # timeoutSeconds: 10
-  # successThreshold: 1
-  # failureThreshold: 3
-
-# Readiness probe overrides (inherits healthCheck when unset)
+# Readiness probe configuration
 readinessProbe:
-  # enabled: true
-  # path: /health
-  # initialDelaySeconds: 30
-  # periodSeconds: 30
-  # timeoutSeconds: 10
-  # successThreshold: 1
-  # failureThreshold: 3
+  enabled: true
+  path: /health
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 
 # Pod disruption budget
 podDisruptionBudget:
