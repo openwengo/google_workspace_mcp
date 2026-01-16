@@ -22,6 +22,7 @@ dist/
 # Development files
 mcp_server_debug.log
 .credentials/
+.venv/
 
 # Cache and temporary files
 __pycache__/

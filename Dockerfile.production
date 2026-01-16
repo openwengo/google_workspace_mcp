@@ -1,8 +1,8 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (curl for healthcheck and builds)
 RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -10,25 +10,41 @@ RUN apt-get update && apt-get install -y \
 # Install uv for dependency management during build
 RUN pip install --no-cache-dir uv
 
-# Create a dedicated virtual environment for runtime
-RUN uv venv /opt/venv
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# Install only runtime dependencies from the lockfile
+# Install locked runtime dependencies into the project venv
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --active --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy application code
+# Copy application code and install the project itself (non-editable)
 COPY . .
+RUN uv sync --frozen --no-dev --no-editable \
+    && rm -rf /root/.cache/uv
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies (curl for healthcheck)
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for the runtime command used by Helm
+RUN pip install --no-cache-dir uv
+
+# Copy application and prebuilt virtual environment
+COPY --from=builder /app /app
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
     && mkdir -p /app/store_creds \
-    && chown -R app:app /app /opt/venv \
+    && chown -R app:app /app \
     && chmod 755 /app/store_creds
 
 USER app
+
+# Ensure the venv is on PATH and prevent runtime syncs/downloads
+ENV PATH="/app/.venv/bin:$PATH"
+ENV UV_NO_SYNC=1
 
 # Expose port (use default of 8000 if PORT not set)
 EXPOSE 8000
@@ -46,4 +62,4 @@ ENV TOOLS=""
 
 # Use entrypoint for the base command and CMD for args
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["python main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
+CMD ["uv run main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
