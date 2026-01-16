@@ -1,6 +1,5 @@
-{{- $healthCheck := .Values.healthCheck | default (dict) }}
-{{- $livenessProbe := merge (dict) $healthCheck (default dict .Values.livenessProbe) }}
-{{- $readinessProbe := merge (dict) $healthCheck (default dict .Values.readinessProbe) }}
+{{- $livenessProbe := .Values.livenessProbe | default (dict) }}
+{{- $readinessProbe := .Values.readinessProbe | default (dict) }}
 
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
