@@ -433,6 +433,17 @@ def is_stateless_mode() -> bool:
     return get_oauth_config().stateless_mode
 
 
+def is_streamable_http_stateless_mode() -> bool:
+    """Check if streamable-http should run in stateless mode.
+
+    Defaults to WORKSPACE_MCP_STATELESS_MODE when the dedicated env var is not set.
+    """
+    raw_value = os.getenv("WORKSPACE_MCP_STREAMABLE_HTTP_STATELESS_MODE", "").strip()
+    if raw_value == "":
+        return is_stateless_mode()
+    return raw_value.lower() in ("1", "true", "yes", "on")
+
+
 def is_external_oauth21_provider() -> bool:
     """Check if external OAuth 2.1 provider mode is enabled."""
     return get_oauth_config().is_external_oauth21_provider()
