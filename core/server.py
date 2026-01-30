@@ -8,12 +8,17 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.middleware import Middleware
 
+import fastmcp
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.google import GoogleProvider
 
 from auth.oauth21_session_store import get_oauth21_session_store, set_auth_provider
 from auth.google_auth import handle_auth_callback, start_auth_flow, check_client_secrets
-from auth.oauth_config import is_oauth21_enabled, is_external_oauth21_provider
+from auth.oauth_config import (
+    is_oauth21_enabled,
+    is_external_oauth21_provider,
+    is_streamable_http_stateless_mode,
+)
 from auth.mcp_session_middleware import MCPSessionMiddleware
 from auth.oauth_responses import (
     create_error_response,
@@ -94,6 +99,11 @@ def configure_server_for_http():
 
     if transport_mode != "streamable-http":
         return
+
+    # Apply stateless HTTP mode if configured
+    fastmcp.settings.stateless_http = is_streamable_http_stateless_mode()
+    if fastmcp.settings.stateless_http:
+        logger.info("Streamable HTTP stateless mode enabled")
 
     # Use centralized OAuth configuration
     from auth.oauth_config import get_oauth_config

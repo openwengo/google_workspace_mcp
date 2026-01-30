@@ -180,6 +180,10 @@ def main():
         "WORKSPACE_MCP_STATELESS_MODE": os.getenv(
             "WORKSPACE_MCP_STATELESS_MODE", "false"
         ),
+        "WORKSPACE_MCP_STREAMABLE_HTTP_STATELESS_MODE": os.getenv(
+            "WORKSPACE_MCP_STREAMABLE_HTTP_STATELESS_MODE", ""
+        )
+        or os.getenv("WORKSPACE_MCP_STATELESS_MODE", "false"),
         "OAUTHLIB_INSECURE_TRANSPORT": os.getenv(
             "OAUTHLIB_INSECURE_TRANSPORT", "false"
         ),
@@ -239,6 +243,7 @@ def main():
             set_enabled_tool_names(set(tier_tools))
         except Exception as e:
             safe_print(f"❌ Error loading tools for tier '{args.tool_tier}': {e}")
+            logger.error("Error loading tools for tier '%s': %s", args.tool_tier, e)
             sys.exit(1)
     elif args.tools is not None:
         # Use explicit tool list without tier filtering
@@ -300,11 +305,17 @@ def main():
             safe_print(
                 "   Please choose one mode: either --single-user OR MCP_ENABLE_OAUTH21=true"
             )
+            logger.error(
+                "Invalid configuration: --single-user cannot be combined with MCP_ENABLE_OAUTH21=true"
+            )
             sys.exit(1)
 
         if is_stateless_mode():
             safe_print("❌ Single-user mode is incompatible with stateless mode")
             safe_print("   Stateless mode requires OAuth 2.1 which is multi-user")
+            logger.error(
+                "Invalid configuration: --single-user cannot be combined with stateless mode"
+            )
             sys.exit(1)
         os.environ["MCP_SINGLE_USER_MODE"] = "1"
         safe_print("🔐 Single-user mode enabled")
@@ -371,6 +382,7 @@ def main():
                 safe_print(
                     f"❌ Port {port} is already in use. Cannot start HTTP server."
                 )
+                logger.error("Port %s is already in use: %s", port, e)
                 sys.exit(1)
 
             server.run(transport="streamable-http", host="0.0.0.0", port=port)
