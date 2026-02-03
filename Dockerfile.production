@@ -2,30 +2,38 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies (curl for healthcheck and builds)
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (curl for healthcheck, build tools for valkey-glide)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for dependency management during build
 RUN pip install --no-cache-dir uv
 
-# Install locked runtime dependencies into the project venv
+# Install locked runtime dependencies into the project venv (include valkey extra)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --extra valkey
 
 # Copy application code and install the project itself (non-editable)
 COPY . .
-RUN uv sync --frozen --no-dev --no-editable \
+RUN uv sync --frozen --no-dev --no-editable --extra valkey \
     && rm -rf /root/.cache/uv
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (curl for healthcheck)
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (curl for healthcheck + valkey-glide runtime libs)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
+    libssl-dev \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for the runtime command used by Helm

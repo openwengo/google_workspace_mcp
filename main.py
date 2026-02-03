@@ -1,8 +1,10 @@
 import argparse
+import errno
 import logging
 import os
 import socket
 import sys
+import time
 from importlib import metadata, import_module
 from dotenv import load_dotenv
 
@@ -73,6 +75,30 @@ def configure_safe_logging():
         ]:
             safe_formatter = SafeEnhancedFormatter(use_colors=True)
             handler.setFormatter(safe_formatter)
+
+
+def wait_for_port_release(port: int, timeout_seconds: float) -> bool:
+    """
+    Wait for a TCP port to become available for binding.
+    Returns True if the port becomes available within timeout_seconds.
+    """
+    deadline = time.monotonic() + max(timeout_seconds, 0.0)
+
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Match uvicorn's reuse behavior to avoid false positives on quick restarts.
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("", port))
+                return True
+        except OSError as e:
+            if e.errno != errno.EADDRINUSE:
+                raise
+
+        if time.monotonic() >= deadline:
+            return False
+
+        time.sleep(0.2)
 
 
 def main():
@@ -374,15 +400,28 @@ def main():
 
         if args.transport == "streamable-http":
             # Check port availability before starting HTTP server
+            port_wait_seconds_raw = os.getenv("WORKSPACE_MCP_PORT_WAIT_SECONDS", "3")
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(("", port))
+                port_wait_seconds = float(port_wait_seconds_raw)
+            except ValueError:
+                safe_print(
+                    f"⚠️  Invalid WORKSPACE_MCP_PORT_WAIT_SECONDS='{port_wait_seconds_raw}', using default 3s."
+                )
+                port_wait_seconds = 3.0
+            try:
+                available = wait_for_port_release(port, port_wait_seconds)
             except OSError as e:
                 safe_print(f"Socket error: {e}")
+                logger.error("Socket error while checking port %s: %s", port, e)
+                sys.exit(1)
+
+            if not available:
                 safe_print(
-                    f"❌ Port {port} is already in use. Cannot start HTTP server."
+                    f"❌ Port {port} is already in use after waiting {port_wait_seconds:.1f}s. Cannot start HTTP server."
                 )
-                logger.error("Port %s is already in use: %s", port, e)
+                logger.error(
+                    "Port %s is already in use after waiting %ss", port, port_wait_seconds
+                )
                 sys.exit(1)
 
             server.run(transport="streamable-http", host="0.0.0.0", port=port)
