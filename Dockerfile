@@ -2,9 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (valkey-glide runtime + optional build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster dependency management
@@ -12,8 +17,8 @@ RUN pip install --no-cache-dir uv
 
 COPY . .
 
-# Install Python dependencies using uv sync
-RUN uv sync --frozen --no-dev
+# Install Python dependencies using uv sync (include valkey extra)
+RUN uv sync --frozen --no-dev --extra valkey
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
