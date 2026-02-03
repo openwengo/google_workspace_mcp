@@ -1,5 +1,6 @@
 {{- $oauthSecretName := include "workspace-mcp.oauthSecretName" . }}
 {{- $envValues := .Values.env | default (dict) }}
+{{- $startupProbe := .Values.startupProbe | default (dict) }}
 {{- $livenessProbe := .Values.livenessProbe | default (dict) }}
 {{- $readinessProbe := .Values.readinessProbe | default (dict) }}
 apiVersion: apps/v1
@@ -41,6 +42,17 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          {{- if $startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ $startupProbe.path }}
+              port: http
+            initialDelaySeconds: {{ $startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ $startupProbe.periodSeconds }}
+            timeoutSeconds: {{ $startupProbe.timeoutSeconds }}
+            successThreshold: {{ $startupProbe.successThreshold }}
+            failureThreshold: {{ $startupProbe.failureThreshold }}
+          {{- end }}
           {{- if $livenessProbe.enabled }}
           livenessProbe:
             httpGet:

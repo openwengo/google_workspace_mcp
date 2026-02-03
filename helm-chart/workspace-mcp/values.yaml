@@ -134,6 +134,16 @@ lifecycle: {}
   #   exec:
   #     command: ["sh", "-c", "sleep 10"]
 
+# Startup probe configuration
+startupProbe:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 30
+
 # Liveness probe configuration
 livenessProbe:
   enabled: true
