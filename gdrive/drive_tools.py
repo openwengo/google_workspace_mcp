@@ -36,6 +36,7 @@ from gdrive.drive_helpers import (
     format_permission_info,
     get_drive_image_url,
     resolve_drive_item,
+    resolve_file_type_mime,
     resolve_folder_id,
     validate_expiration_time,
     validate_share_role,
@@ -61,6 +62,7 @@ async def search_drive_files(
     drive_id: Optional[str] = None,
     include_items_from_all_drives: bool = True,
     corpora: Optional[str] = None,
+    file_type: Optional[str] = None,
     detailed: bool = True,
 ) -> str:
     """
@@ -76,6 +78,11 @@ async def search_drive_files(
         corpora (Optional[str]): Bodies of items to query (e.g., 'user', 'domain', 'drive', 'allDrives').
                                  If 'drive_id' is specified and 'corpora' is None, it defaults to 'drive'.
                                  Otherwise, Drive API default behavior applies. Prefer 'user' or 'drive' over 'allDrives' for efficiency.
+        file_type (Optional[str]): Restrict results to a specific file type. Accepts a friendly
+                                   name ('folder', 'document'/'doc', 'spreadsheet'/'sheet',
+                                   'presentation'/'slides', 'form', 'drawing', 'pdf', 'shortcut',
+                                   'script', 'site', 'jam'/'jamboard') or any raw MIME type
+                                   string (e.g. 'application/pdf'). Defaults to None (all types).
         detailed (bool): Whether to include size, modified time, and link in results. Defaults to True.
 
     Returns:
@@ -83,7 +90,7 @@ async def search_drive_files(
              Includes a nextPageToken line when more results are available.
     """
     logger.info(
-        f"[search_drive_files] Invoked. Email: '{user_google_email}', Query: '{query}'"
+        f"[search_drive_files] Invoked. Email: '{user_google_email}', Query: '{query}', file_type: '{file_type}'"
     )
 
     # Check if the query looks like a structured Drive query or free text
@@ -102,6 +109,11 @@ async def search_drive_files(
         logger.info(
             f"[search_drive_files] Reformatting free text query '{query}' to '{final_query}'"
         )
+
+    if file_type is not None:
+        mime = resolve_file_type_mime(file_type)
+        final_query = f"({final_query}) and mimeType = '{mime}'"
+        logger.info(f"[search_drive_files] Added mimeType filter: '{mime}'")
 
     list_params = build_drive_list_params(
         query=final_query,
@@ -429,6 +441,7 @@ async def list_drive_items(
     drive_id: Optional[str] = None,
     include_items_from_all_drives: bool = True,
     corpora: Optional[str] = None,
+    file_type: Optional[str] = None,
     detailed: bool = True,
 ) -> str:
     """
@@ -444,6 +457,11 @@ async def list_drive_items(
         drive_id (Optional[str]): ID of the shared drive. If provided, the listing is scoped to this drive.
         include_items_from_all_drives (bool): Whether items from all accessible shared drives should be included if `drive_id` is not set. Defaults to True.
         corpora (Optional[str]): Corpus to query ('user', 'drive', 'allDrives'). If `drive_id` is set and `corpora` is None, 'drive' is used. If None and no `drive_id`, API defaults apply.
+        file_type (Optional[str]): Restrict results to a specific file type. Accepts a friendly
+                                   name ('folder', 'document'/'doc', 'spreadsheet'/'sheet',
+                                   'presentation'/'slides', 'form', 'drawing', 'pdf', 'shortcut',
+                                   'script', 'site', 'jam'/'jamboard') or any raw MIME type
+                                   string (e.g. 'application/pdf'). Defaults to None (all types).
         detailed (bool): Whether to include size, modified time, and link in results. Defaults to True.
 
     Returns:
@@ -451,11 +469,16 @@ async def list_drive_items(
              Includes a nextPageToken line when more results are available.
     """
     logger.info(
-        f"[list_drive_items] Invoked. Email: '{user_google_email}', Folder ID: '{folder_id}'"
+        f"[list_drive_items] Invoked. Email: '{user_google_email}', Folder ID: '{folder_id}', File Type: '{file_type}'"
     )
 
     resolved_folder_id = await resolve_folder_id(service, folder_id)
     final_query = f"'{resolved_folder_id}' in parents and trashed=false"
+
+    if file_type is not None:
+        mime = resolve_file_type_mime(file_type)
+        final_query = f"({final_query}) and mimeType = '{mime}'"
+        logger.info(f"[list_drive_items] Added mimeType filter: '{mime}'")
 
     list_params = build_drive_list_params(
         query=final_query,

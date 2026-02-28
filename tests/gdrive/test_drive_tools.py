@@ -1,9 +1,9 @@
 """
 Unit tests for Google Drive MCP tools.
 
-Tests create_drive_folder with mocked API responses, and the `detailed`
-parameter added to search_drive_files, list_drive_items, and
-build_drive_list_params.
+Tests create_drive_folder with mocked API responses, plus coverage for
+`search_drive_files` and `list_drive_items` pagination, `detailed` output,
+and `file_type` filtering behaviors.
 """
 
 import pytest
@@ -577,3 +577,394 @@ async def test_list_detailed_false_requests_compact_api_fields(mock_resolve_fold
     assert "modifiedTime" not in call_kwargs["fields"]
     assert "webViewLink" not in call_kwargs["fields"]
     assert "size" not in call_kwargs["fields"]
+
+
+# ---------------------------------------------------------------------------
+# Existing behavior coverage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_free_text_returns_results():
+    """Free-text query is wrapped in fullText contains and results are formatted."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {
+        "files": [
+            _make_file("f1", "My Doc", "application/vnd.google-apps.document"),
+        ]
+    }
+
+    result = await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="my doc",
+    )
+
+    assert "Found 1 files" in result
+    assert "My Doc" in result
+    assert "f1" in result
+
+
+@pytest.mark.asyncio
+async def test_search_no_results():
+    """No results returns a clear message."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    result = await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="nothing here",
+    )
+
+    assert "No files found" in result
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_basic(mock_resolve_folder):
+    """Basic listing without filters returns all items."""
+    mock_resolve_folder.return_value = "resolved_root"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {
+        "files": [
+            _make_file("id1", "Folder A", "application/vnd.google-apps.folder"),
+            _make_file("id2", "Doc B", "application/vnd.google-apps.document"),
+        ]
+    }
+
+    result = await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="root",
+    )
+
+    assert "Found 2 items" in result
+    assert "Folder A" in result
+    assert "Doc B" in result
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_no_results(mock_resolve_folder):
+    """Empty folder returns a clear message."""
+    mock_resolve_folder.return_value = "resolved_root"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    result = await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="root",
+    )
+
+    assert "No items found" in result
+
+
+# ---------------------------------------------------------------------------
+# file_type filtering
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_folder_adds_mime_filter():
+    """file_type='folder' appends the folder MIME type to the query."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {
+        "files": [
+            _make_file("fold1", "My Folder", "application/vnd.google-apps.folder")
+        ]
+    }
+
+    result = await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="my",
+        file_type="folder",
+    )
+
+    assert "Found 1 files" in result
+    assert "My Folder" in result
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/vnd.google-apps.folder'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_document_alias():
+    """Alias 'doc' resolves to the Google Docs MIME type."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="report",
+        file_type="doc",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/vnd.google-apps.document'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_plural_alias():
+    """Plural aliases are resolved for friendlier natural-language usage."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="project",
+        file_type="folders",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/vnd.google-apps.folder'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_sheet_alias():
+    """Alias 'sheet' resolves to the Google Sheets MIME type."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="budget",
+        file_type="sheet",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/vnd.google-apps.spreadsheet'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_raw_mime():
+    """A raw MIME type string is passed through unchanged."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("p1", "Report.pdf", "application/pdf")]
+    }
+
+    result = await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="report",
+        file_type="application/pdf",
+    )
+
+    assert "Report.pdf" in result
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/pdf'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_none_no_mime_filter():
+    """When file_type is None no mimeType clause is added to the query."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="anything",
+        file_type=None,
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType" not in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_structured_query_combined():
+    """file_type filter is appended even when the query is already structured."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="name contains 'budget'",
+        file_type="spreadsheet",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    q = call_kwargs["q"]
+    assert "name contains 'budget'" in q
+    assert "mimeType = 'application/vnd.google-apps.spreadsheet'" in q
+
+
+@pytest.mark.asyncio
+async def test_search_file_type_unknown_raises_value_error():
+    """An unrecognised friendly type name raises ValueError immediately."""
+    mock_service = Mock()
+
+    with pytest.raises(ValueError, match="Unknown file_type"):
+        await _unwrap(search_drive_files)(
+            service=mock_service,
+            user_google_email="user@example.com",
+            query="something",
+            file_type="notatype",
+        )
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_file_type_folder_adds_mime_filter(mock_resolve_folder):
+    """file_type='folder' appends the folder MIME clause to the query."""
+    mock_resolve_folder.return_value = "resolved_root"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {
+        "files": [_make_file("sub1", "SubFolder", "application/vnd.google-apps.folder")]
+    }
+
+    result = await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="root",
+        file_type="folder",
+    )
+
+    assert "Found 1 items" in result
+    assert "SubFolder" in result
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    q = call_kwargs["q"]
+    assert "'resolved_root' in parents" in q
+    assert "trashed=false" in q
+    assert "mimeType = 'application/vnd.google-apps.folder'" in q
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_file_type_spreadsheet(mock_resolve_folder):
+    """file_type='spreadsheet' appends the Sheets MIME clause."""
+    mock_resolve_folder.return_value = "folder_xyz"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="folder_xyz",
+        file_type="spreadsheet",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/vnd.google-apps.spreadsheet'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_file_type_raw_mime(mock_resolve_folder):
+    """A raw MIME type string is passed through unchanged."""
+    mock_resolve_folder.return_value = "folder_abc"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="folder_abc",
+        file_type="application/pdf",
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType = 'application/pdf'" in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_file_type_none_no_mime_filter(mock_resolve_folder):
+    """When file_type is None no mimeType clause is added."""
+    mock_resolve_folder.return_value = "resolved_root"
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        folder_id="root",
+        file_type=None,
+    )
+
+    call_kwargs = mock_service.files.return_value.list.call_args.kwargs
+    assert "mimeType" not in call_kwargs["q"]
+
+
+@pytest.mark.asyncio
+@patch("gdrive.drive_tools.resolve_folder_id", new_callable=AsyncMock)
+async def test_list_items_file_type_unknown_raises(mock_resolve_folder):
+    """An unrecognised friendly type name raises ValueError."""
+    mock_resolve_folder.return_value = "resolved_root"
+    mock_service = Mock()
+
+    with pytest.raises(ValueError, match="Unknown file_type"):
+        await _unwrap(list_drive_items)(
+            service=mock_service,
+            user_google_email="user@example.com",
+            folder_id="root",
+            file_type="unknowntype",
+        )
+
+
+# ---------------------------------------------------------------------------
+# OR-precedence grouping
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_or_query_is_grouped_before_mime_filter():
+    """An OR structured query is wrapped in parentheses so MIME filter precedence is correct."""
+    mock_service = Mock()
+    mock_service.files().list().execute.return_value = {"files": []}
+
+    await _unwrap(search_drive_files)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        query="name contains 'a' or name contains 'b'",
+        file_type="document",
+    )
+
+    q = mock_service.files.return_value.list.call_args.kwargs["q"]
+    assert q.startswith("(")
+    assert "name contains 'a' or name contains 'b'" in q
+    assert ") and mimeType = 'application/vnd.google-apps.document'" in q
+
+
+# ---------------------------------------------------------------------------
+# MIME type validation
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_file_type_mime_invalid_mime_raises():
+    """A raw string with '/' but containing quotes raises ValueError."""
+    from gdrive.drive_helpers import resolve_file_type_mime
+
+    with pytest.raises(ValueError, match="Invalid MIME type"):
+        resolve_file_type_mime("application/pdf' or '1'='1")
+
+
+def test_resolve_file_type_mime_strips_whitespace():
+    """Leading/trailing whitespace is stripped from raw MIME strings."""
+    from gdrive.drive_helpers import resolve_file_type_mime
+
+    assert resolve_file_type_mime("  application/pdf  ") == "application/pdf"
+
+
+def test_resolve_file_type_mime_normalizes_case():
+    """Raw MIME types are normalized to lowercase for Drive query consistency."""
+    from gdrive.drive_helpers import resolve_file_type_mime
+
+    assert resolve_file_type_mime("Application/PDF") == "application/pdf"
+
+
+def test_resolve_file_type_mime_empty_raises():
+    """Blank values are rejected with a clear validation error."""
+    from gdrive.drive_helpers import resolve_file_type_mime
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        resolve_file_type_mime("   ")
