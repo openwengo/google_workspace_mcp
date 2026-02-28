@@ -25,7 +25,7 @@
   <img width="170" src="https://glama.ai/mcp/servers/@taylorwilsdon/google_workspace_mcp/badge" alt="Google Workspace Server MCP server" align="center"/>
 </a>
 <a href="https://www.pulsemcp.com/servers/taylorwilsdon-google-workspace">
-<img width="304" src="https://github.com/user-attachments/assets/0794ef1a-dc1c-447d-9661-9c704d7acc9d" align="center"/>
+<img width="375" src="https://github.com/user-attachments/assets/0794ef1a-dc1c-447d-9661-9c704d7acc9d" align="center"/>
 </a>
 </div>
 
