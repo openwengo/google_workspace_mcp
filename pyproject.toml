@@ -22,6 +22,7 @@ dependencies = [
  "python-dotenv>=1.1.0",
  "pyyaml>=6.0.2",
  "cryptography>=45.0.0",
+ "defusedxml>=0.7.1",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
