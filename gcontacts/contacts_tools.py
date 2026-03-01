@@ -249,48 +249,40 @@ async def list_contacts(
     """
     logger.info(f"[list_contacts] Invoked. Email: '{user_google_email}'")
 
-    try:
-        params: Dict[str, Any] = {
-            "resourceName": "people/me",
-            "personFields": DEFAULT_PERSON_FIELDS,
-            "pageSize": min(page_size, 1000),
-        }
+    params: Dict[str, Any] = {
+        "resourceName": "people/me",
+        "personFields": DEFAULT_PERSON_FIELDS,
+        "pageSize": min(page_size, 1000),
+    }
 
-        if page_token:
-            params["pageToken"] = page_token
-        if sort_order:
-            params["sortOrder"] = sort_order
+    if page_token:
+        params["pageToken"] = page_token
+    if sort_order:
+        params["sortOrder"] = sort_order
 
-        result = await asyncio.to_thread(
-            service.people().connections().list(**params).execute
-        )
+    result = await asyncio.to_thread(
+        service.people().connections().list(**params).execute
+    )
 
-        connections = result.get("connections", [])
-        next_page_token = result.get("nextPageToken")
-        total_people = result.get("totalPeople", len(connections))
+    connections = result.get("connections", [])
+    next_page_token = result.get("nextPageToken")
+    total_people = result.get("totalPeople", len(connections))
 
-        if not connections:
-            return f"No contacts found for {user_google_email}."
+    if not connections:
+        return f"No contacts found for {user_google_email}."
 
-        response = f"Contacts for {user_google_email} ({len(connections)} of {total_people}):\n\n"
+    response = (
+        f"Contacts for {user_google_email} ({len(connections)} of {total_people}):\n\n"
+    )
 
-        for person in connections:
-            response += _format_contact(person) + "\n\n"
+    for person in connections:
+        response += _format_contact(person) + "\n\n"
 
-        if next_page_token:
-            response += f"Next page token: {next_page_token}"
+    if next_page_token:
+        response += f"Next page token: {next_page_token}"
 
-        logger.info(f"Found {len(connections)} contacts for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Found {len(connections)} contacts for {user_google_email}")
+    return response
 
 
 @server.tool()
@@ -321,31 +313,17 @@ async def get_contact(
         f"[get_contact] Invoked. Email: '{user_google_email}', Contact: {resource_name}"
     )
 
-    try:
-        person = await asyncio.to_thread(
-            service.people()
-            .get(resourceName=resource_name, personFields=DETAILED_PERSON_FIELDS)
-            .execute
-        )
+    person = await asyncio.to_thread(
+        service.people()
+        .get(resourceName=resource_name, personFields=DETAILED_PERSON_FIELDS)
+        .execute
+    )
 
-        response = f"Contact Details for {user_google_email}:\n\n"
-        response += _format_contact(person, detailed=True)
+    response = f"Contact Details for {user_google_email}:\n\n"
+    response += _format_contact(person, detailed=True)
 
-        logger.info(f"Retrieved contact {resource_name} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        if error.resp.status == 404:
-            message = f"Contact not found: {contact_id}"
-            logger.warning(message)
-            raise Exception(message)
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Retrieved contact {resource_name} for {user_google_email}")
+    return response
 
 
 @server.tool()
@@ -372,44 +350,34 @@ async def search_contacts(
         f"[search_contacts] Invoked. Email: '{user_google_email}', Query: '{query}'"
     )
 
-    try:
-        # Warm up the search cache if needed
-        await _warmup_search_cache(service, user_google_email)
+    # Warm up the search cache if needed
+    await _warmup_search_cache(service, user_google_email)
 
-        result = await asyncio.to_thread(
-            service.people()
-            .searchContacts(
-                query=query,
-                readMask=DEFAULT_PERSON_FIELDS,
-                pageSize=min(page_size, 30),
-            )
-            .execute
+    result = await asyncio.to_thread(
+        service.people()
+        .searchContacts(
+            query=query,
+            readMask=DEFAULT_PERSON_FIELDS,
+            pageSize=min(page_size, 30),
         )
+        .execute
+    )
 
-        results = result.get("results", [])
+    results = result.get("results", [])
 
-        if not results:
-            return f"No contacts found matching '{query}' for {user_google_email}."
+    if not results:
+        return f"No contacts found matching '{query}' for {user_google_email}."
 
-        response = f"Search Results for '{query}' ({len(results)} found):\n\n"
+    response = f"Search Results for '{query}' ({len(results)} found):\n\n"
 
-        for item in results:
-            person = item.get("person", {})
-            response += _format_contact(person) + "\n\n"
+    for item in results:
+        person = item.get("person", {})
+        response += _format_contact(person) + "\n\n"
 
-        logger.info(
-            f"Found {len(results)} contacts matching '{query}' for {user_google_email}"
-        )
-        return response
-
-    except HttpError as error:
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(
+        f"Found {len(results)} contacts matching '{query}' for {user_google_email}"
+    )
+    return response
 
 
 @server.tool()
@@ -457,129 +425,113 @@ async def manage_contact(
         f"[manage_contact] Invoked. Action: '{action}', Email: '{user_google_email}'"
     )
 
-    try:
-        if action == "create":
-            body = _build_person_body(
-                given_name=given_name,
-                family_name=family_name,
-                email=email,
-                phone=phone,
-                organization=organization,
-                job_title=job_title,
-                notes=notes,
-            )
-
-            if not body:
-                raise UserInputError(
-                    "At least one field (name, email, phone, etc.) must be provided."
-                )
-
-            result = await asyncio.to_thread(
-                service.people()
-                .createContact(body=body, personFields=DETAILED_PERSON_FIELDS)
-                .execute
-            )
-
-            response = f"Contact Created for {user_google_email}:\n\n"
-            response += _format_contact(result, detailed=True)
-
-            created_id = result.get("resourceName", "").replace("people/", "")
-            logger.info(f"Created contact {created_id} for {user_google_email}")
-            return response
-
-        # update and delete both require contact_id
-        if not contact_id:
-            raise UserInputError(f"contact_id is required for '{action}' action.")
-
-        # Normalize resource name
-        if not contact_id.startswith("people/"):
-            resource_name = f"people/{contact_id}"
-        else:
-            resource_name = contact_id
-
-        if action == "update":
-            # Fetch the contact to get the etag
-            current = await asyncio.to_thread(
-                service.people()
-                .get(resourceName=resource_name, personFields=DETAILED_PERSON_FIELDS)
-                .execute
-            )
-
-            etag = current.get("etag")
-            if not etag:
-                raise Exception("Unable to get contact etag for update.")
-
-            body = _build_person_body(
-                given_name=given_name,
-                family_name=family_name,
-                email=email,
-                phone=phone,
-                organization=organization,
-                job_title=job_title,
-                notes=notes,
-            )
-
-            if not body:
-                raise UserInputError(
-                    "At least one field (name, email, phone, etc.) must be provided."
-                )
-
-            body["etag"] = etag
-
-            update_person_fields = []
-            if "names" in body:
-                update_person_fields.append("names")
-            if "emailAddresses" in body:
-                update_person_fields.append("emailAddresses")
-            if "phoneNumbers" in body:
-                update_person_fields.append("phoneNumbers")
-            if "organizations" in body:
-                update_person_fields.append("organizations")
-            if "biographies" in body:
-                update_person_fields.append("biographies")
-            if "addresses" in body:
-                update_person_fields.append("addresses")
-
-            result = await asyncio.to_thread(
-                service.people()
-                .updateContact(
-                    resourceName=resource_name,
-                    body=body,
-                    updatePersonFields=",".join(update_person_fields),
-                    personFields=DETAILED_PERSON_FIELDS,
-                )
-                .execute
-            )
-
-            response = f"Contact Updated for {user_google_email}:\n\n"
-            response += _format_contact(result, detailed=True)
-
-            logger.info(f"Updated contact {resource_name} for {user_google_email}")
-            return response
-
-        # action == "delete"
-        await asyncio.to_thread(
-            service.people().deleteContact(resourceName=resource_name).execute
+    if action == "create":
+        body = _build_person_body(
+            given_name=given_name,
+            family_name=family_name,
+            email=email,
+            phone=phone,
+            organization=organization,
+            job_title=job_title,
+            notes=notes,
         )
 
-        response = f"Contact {contact_id} has been deleted for {user_google_email}."
-        logger.info(f"Deleted contact {resource_name} for {user_google_email}")
+        if not body:
+            raise UserInputError(
+                "At least one field (name, email, phone, etc.) must be provided."
+            )
+
+        result = await asyncio.to_thread(
+            service.people()
+            .createContact(body=body, personFields=DETAILED_PERSON_FIELDS)
+            .execute
+        )
+
+        response = f"Contact Created for {user_google_email}:\n\n"
+        response += _format_contact(result, detailed=True)
+
+        created_id = result.get("resourceName", "").replace("people/", "")
+        logger.info(f"Created contact {created_id} for {user_google_email}")
         return response
 
-    except UserInputError:
-        raise
-    except HttpError as error:
-        if error.resp.status == 404:
-            message = f"Contact not found: {contact_id}"
-            logger.warning(message)
-            raise Exception(message)
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    # update and delete both require contact_id
+    if not contact_id:
+        raise UserInputError(f"contact_id is required for '{action}' action.")
+
+    # Normalize resource name
+    if not contact_id.startswith("people/"):
+        resource_name = f"people/{contact_id}"
+    else:
+        resource_name = contact_id
+
+    if action == "update":
+        # Fetch the contact to get the etag
+        current = await asyncio.to_thread(
+            service.people()
+            .get(resourceName=resource_name, personFields=DETAILED_PERSON_FIELDS)
+            .execute
+        )
+
+        etag = current.get("etag")
+        if not etag:
+            raise Exception("Unable to get contact etag for update.")
+
+        body = _build_person_body(
+            given_name=given_name,
+            family_name=family_name,
+            email=email,
+            phone=phone,
+            organization=organization,
+            job_title=job_title,
+            notes=notes,
+        )
+
+        if not body:
+            raise UserInputError(
+                "At least one field (name, email, phone, etc.) must be provided."
+            )
+
+        body["etag"] = etag
+
+        update_person_fields = []
+        if "names" in body:
+            update_person_fields.append("names")
+        if "emailAddresses" in body:
+            update_person_fields.append("emailAddresses")
+        if "phoneNumbers" in body:
+            update_person_fields.append("phoneNumbers")
+        if "organizations" in body:
+            update_person_fields.append("organizations")
+        if "biographies" in body:
+            update_person_fields.append("biographies")
+        if "addresses" in body:
+            update_person_fields.append("addresses")
+
+        result = await asyncio.to_thread(
+            service.people()
+            .updateContact(
+                resourceName=resource_name,
+                body=body,
+                updatePersonFields=",".join(update_person_fields),
+                personFields=DETAILED_PERSON_FIELDS,
+            )
+            .execute
+        )
+
+        response = f"Contact Updated for {user_google_email}:\n\n"
+        response += _format_contact(result, detailed=True)
+
+        logger.info(f"Updated contact {resource_name} for {user_google_email}")
+        return response
+
+    # action == "delete"
+    await asyncio.to_thread(
+        service.people().deleteContact(resourceName=resource_name).execute
+    )
+
+    response = f"Contact {contact_id} has been deleted for {user_google_email}."
+    logger.info(f"Deleted contact {resource_name} for {user_google_email}")
+    return response
 
 
 # =============================================================================
@@ -609,51 +561,41 @@ async def list_contact_groups(
     """
     logger.info(f"[list_contact_groups] Invoked. Email: '{user_google_email}'")
 
-    try:
-        params: Dict[str, Any] = {
-            "pageSize": min(page_size, 1000),
-            "groupFields": CONTACT_GROUP_FIELDS,
-        }
+    params: Dict[str, Any] = {
+        "pageSize": min(page_size, 1000),
+        "groupFields": CONTACT_GROUP_FIELDS,
+    }
 
-        if page_token:
-            params["pageToken"] = page_token
+    if page_token:
+        params["pageToken"] = page_token
 
-        result = await asyncio.to_thread(service.contactGroups().list(**params).execute)
+    result = await asyncio.to_thread(service.contactGroups().list(**params).execute)
 
-        groups = result.get("contactGroups", [])
-        next_page_token = result.get("nextPageToken")
+    groups = result.get("contactGroups", [])
+    next_page_token = result.get("nextPageToken")
 
-        if not groups:
-            return f"No contact groups found for {user_google_email}."
+    if not groups:
+        return f"No contact groups found for {user_google_email}."
 
-        response = f"Contact Groups for {user_google_email}:\n\n"
+    response = f"Contact Groups for {user_google_email}:\n\n"
 
-        for group in groups:
-            resource_name = group.get("resourceName", "")
-            group_id = resource_name.replace("contactGroups/", "")
-            name = group.get("name", "Unnamed")
-            group_type = group.get("groupType", "USER_CONTACT_GROUP")
-            member_count = group.get("memberCount", 0)
+    for group in groups:
+        resource_name = group.get("resourceName", "")
+        group_id = resource_name.replace("contactGroups/", "")
+        name = group.get("name", "Unnamed")
+        group_type = group.get("groupType", "USER_CONTACT_GROUP")
+        member_count = group.get("memberCount", 0)
 
-            response += f"- {name}\n"
-            response += f"  ID: {group_id}\n"
-            response += f"  Type: {group_type}\n"
-            response += f"  Members: {member_count}\n\n"
+        response += f"- {name}\n"
+        response += f"  ID: {group_id}\n"
+        response += f"  Type: {group_type}\n"
+        response += f"  Members: {member_count}\n\n"
 
-        if next_page_token:
-            response += f"Next page token: {next_page_token}"
+    if next_page_token:
+        response += f"Next page token: {next_page_token}"
 
-        logger.info(f"Found {len(groups)} contact groups for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Found {len(groups)} contact groups for {user_google_email}")
+    return response
 
 
 @server.tool()
@@ -686,49 +628,35 @@ async def get_contact_group(
         f"[get_contact_group] Invoked. Email: '{user_google_email}', Group: {resource_name}"
     )
 
-    try:
-        result = await asyncio.to_thread(
-            service.contactGroups()
-            .get(
-                resourceName=resource_name,
-                maxMembers=min(max_members, 1000),
-                groupFields=CONTACT_GROUP_FIELDS,
-            )
-            .execute
+    result = await asyncio.to_thread(
+        service.contactGroups()
+        .get(
+            resourceName=resource_name,
+            maxMembers=min(max_members, 1000),
+            groupFields=CONTACT_GROUP_FIELDS,
         )
+        .execute
+    )
 
-        name = result.get("name", "Unnamed")
-        group_type = result.get("groupType", "USER_CONTACT_GROUP")
-        member_count = result.get("memberCount", 0)
-        member_resource_names = result.get("memberResourceNames", [])
+    name = result.get("name", "Unnamed")
+    group_type = result.get("groupType", "USER_CONTACT_GROUP")
+    member_count = result.get("memberCount", 0)
+    member_resource_names = result.get("memberResourceNames", [])
 
-        response = f"Contact Group Details for {user_google_email}:\n\n"
-        response += f"Name: {name}\n"
-        response += f"ID: {group_id}\n"
-        response += f"Type: {group_type}\n"
-        response += f"Total Members: {member_count}\n"
+    response = f"Contact Group Details for {user_google_email}:\n\n"
+    response += f"Name: {name}\n"
+    response += f"ID: {group_id}\n"
+    response += f"Type: {group_type}\n"
+    response += f"Total Members: {member_count}\n"
 
-        if member_resource_names:
-            response += f"\nMembers ({len(member_resource_names)} shown):\n"
-            for member in member_resource_names:
-                contact_id = member.replace("people/", "")
-                response += f"  - {contact_id}\n"
+    if member_resource_names:
+        response += f"\nMembers ({len(member_resource_names)} shown):\n"
+        for member in member_resource_names:
+            contact_id = member.replace("people/", "")
+            response += f"  - {contact_id}\n"
 
-        logger.info(f"Retrieved contact group {resource_name} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        if error.resp.status == 404:
-            message = f"Contact group not found: {group_id}"
-            logger.warning(message)
-            raise Exception(message)
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Retrieved contact group {resource_name} for {user_google_email}")
+    return response
 
 
 # =============================================================================
@@ -774,192 +702,172 @@ async def manage_contacts_batch(
         f"[manage_contacts_batch] Invoked. Action: '{action}', Email: '{user_google_email}'"
     )
 
-    try:
-        if action == "create":
-            if not contacts:
-                raise UserInputError(
-                    "contacts parameter is required for 'create' action."
-                )
+    if action == "create":
+        if not contacts:
+            raise UserInputError("contacts parameter is required for 'create' action.")
 
-            if len(contacts) > 200:
-                raise UserInputError("Maximum 200 contacts can be created in a batch.")
+        if len(contacts) > 200:
+            raise UserInputError("Maximum 200 contacts can be created in a batch.")
 
-            contact_bodies = []
-            for contact in contacts:
-                body = _build_person_body(
-                    given_name=contact.get("given_name"),
-                    family_name=contact.get("family_name"),
-                    email=contact.get("email"),
-                    phone=contact.get("phone"),
-                    organization=contact.get("organization"),
-                    job_title=contact.get("job_title"),
-                )
-                if body:
-                    contact_bodies.append({"contactPerson": body})
-
-            if not contact_bodies:
-                raise UserInputError("No valid contact data provided.")
-
-            batch_body = {
-                "contacts": contact_bodies,
-                "readMask": DEFAULT_PERSON_FIELDS,
-            }
-
-            result = await asyncio.to_thread(
-                service.people().batchCreateContacts(body=batch_body).execute
+        contact_bodies = []
+        for contact in contacts:
+            body = _build_person_body(
+                given_name=contact.get("given_name"),
+                family_name=contact.get("family_name"),
+                email=contact.get("email"),
+                phone=contact.get("phone"),
+                organization=contact.get("organization"),
+                job_title=contact.get("job_title"),
             )
+            if body:
+                contact_bodies.append({"contactPerson": body})
 
-            created_people = result.get("createdPeople", [])
+        if not contact_bodies:
+            raise UserInputError("No valid contact data provided.")
 
-            response = f"Batch Create Results for {user_google_email}:\n\n"
-            response += f"Created {len(created_people)} contacts:\n\n"
+        batch_body = {
+            "contacts": contact_bodies,
+            "readMask": DEFAULT_PERSON_FIELDS,
+        }
 
-            for item in created_people:
-                person = item.get("person", {})
-                response += _format_contact(person) + "\n\n"
-
-            logger.info(
-                f"Batch created {len(created_people)} contacts for {user_google_email}"
-            )
-            return response
-
-        if action == "update":
-            if not updates:
-                raise UserInputError(
-                    "updates parameter is required for 'update' action."
-                )
-
-            if len(updates) > 200:
-                raise UserInputError("Maximum 200 contacts can be updated in a batch.")
-
-            # Fetch all contacts to get their etags
-            resource_names = []
-            for update in updates:
-                cid = update.get("contact_id")
-                if not cid:
-                    raise UserInputError("Each update must include a contact_id.")
-                if not cid.startswith("people/"):
-                    cid = f"people/{cid}"
-                resource_names.append(cid)
-
-            batch_get_result = await asyncio.to_thread(
-                service.people()
-                .getBatchGet(
-                    resourceNames=resource_names,
-                    personFields="metadata",
-                )
-                .execute
-            )
-
-            etags = {}
-            for resp in batch_get_result.get("responses", []):
-                person = resp.get("person", {})
-                rname = person.get("resourceName")
-                etag = person.get("etag")
-                if rname and etag:
-                    etags[rname] = etag
-
-            update_bodies = []
-            update_fields_set: set = set()
-
-            for update in updates:
-                cid = update.get("contact_id", "")
-                if not cid.startswith("people/"):
-                    cid = f"people/{cid}"
-
-                etag = etags.get(cid)
-                if not etag:
-                    logger.warning(f"No etag found for {cid}, skipping")
-                    continue
-
-                body = _build_person_body(
-                    given_name=update.get("given_name"),
-                    family_name=update.get("family_name"),
-                    email=update.get("email"),
-                    phone=update.get("phone"),
-                    organization=update.get("organization"),
-                    job_title=update.get("job_title"),
-                )
-
-                if body:
-                    body["resourceName"] = cid
-                    body["etag"] = etag
-                    update_bodies.append({"person": body})
-
-                    if "names" in body:
-                        update_fields_set.add("names")
-                    if "emailAddresses" in body:
-                        update_fields_set.add("emailAddresses")
-                    if "phoneNumbers" in body:
-                        update_fields_set.add("phoneNumbers")
-                    if "organizations" in body:
-                        update_fields_set.add("organizations")
-
-            if not update_bodies:
-                raise UserInputError("No valid update data provided.")
-
-            batch_body = {
-                "contacts": update_bodies,
-                "updateMask": ",".join(update_fields_set),
-                "readMask": DEFAULT_PERSON_FIELDS,
-            }
-
-            result = await asyncio.to_thread(
-                service.people().batchUpdateContacts(body=batch_body).execute
-            )
-
-            update_results = result.get("updateResult", {})
-
-            response = f"Batch Update Results for {user_google_email}:\n\n"
-            response += f"Updated {len(update_results)} contacts:\n\n"
-
-            for rname, update_result in update_results.items():
-                person = update_result.get("person", {})
-                response += _format_contact(person) + "\n\n"
-
-            logger.info(
-                f"Batch updated {len(update_results)} contacts for {user_google_email}"
-            )
-            return response
-
-        # action == "delete"
-        if not contact_ids:
-            raise UserInputError(
-                "contact_ids parameter is required for 'delete' action."
-            )
-
-        if len(contact_ids) > 500:
-            raise UserInputError("Maximum 500 contacts can be deleted in a batch.")
-
-        resource_names = []
-        for cid in contact_ids:
-            if not cid.startswith("people/"):
-                resource_names.append(f"people/{cid}")
-            else:
-                resource_names.append(cid)
-
-        batch_body = {"resourceNames": resource_names}
-
-        await asyncio.to_thread(
-            service.people().batchDeleteContacts(body=batch_body).execute
+        result = await asyncio.to_thread(
+            service.people().batchCreateContacts(body=batch_body).execute
         )
 
-        response = f"Batch deleted {len(contact_ids)} contacts for {user_google_email}."
+        created_people = result.get("createdPeople", [])
+
+        response = f"Batch Create Results for {user_google_email}:\n\n"
+        response += f"Created {len(created_people)} contacts:\n\n"
+
+        for item in created_people:
+            person = item.get("person", {})
+            response += _format_contact(person) + "\n\n"
+
         logger.info(
-            f"Batch deleted {len(contact_ids)} contacts for {user_google_email}"
+            f"Batch created {len(created_people)} contacts for {user_google_email}"
         )
         return response
 
-    except UserInputError:
-        raise
-    except HttpError as error:
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    if action == "update":
+        if not updates:
+            raise UserInputError("updates parameter is required for 'update' action.")
+
+        if len(updates) > 200:
+            raise UserInputError("Maximum 200 contacts can be updated in a batch.")
+
+        # Fetch all contacts to get their etags
+        resource_names = []
+        for update in updates:
+            cid = update.get("contact_id")
+            if not cid:
+                raise UserInputError("Each update must include a contact_id.")
+            if not cid.startswith("people/"):
+                cid = f"people/{cid}"
+            resource_names.append(cid)
+
+        batch_get_result = await asyncio.to_thread(
+            service.people()
+            .getBatchGet(
+                resourceNames=resource_names,
+                personFields="metadata",
+            )
+            .execute
+        )
+
+        etags = {}
+        for resp in batch_get_result.get("responses", []):
+            person = resp.get("person", {})
+            rname = person.get("resourceName")
+            etag = person.get("etag")
+            if rname and etag:
+                etags[rname] = etag
+
+        update_bodies = []
+        update_fields_set: set = set()
+
+        for update in updates:
+            cid = update.get("contact_id", "")
+            if not cid.startswith("people/"):
+                cid = f"people/{cid}"
+
+            etag = etags.get(cid)
+            if not etag:
+                logger.warning(f"No etag found for {cid}, skipping")
+                continue
+
+            body = _build_person_body(
+                given_name=update.get("given_name"),
+                family_name=update.get("family_name"),
+                email=update.get("email"),
+                phone=update.get("phone"),
+                organization=update.get("organization"),
+                job_title=update.get("job_title"),
+            )
+
+            if body:
+                body["resourceName"] = cid
+                body["etag"] = etag
+                update_bodies.append({"person": body})
+
+                if "names" in body:
+                    update_fields_set.add("names")
+                if "emailAddresses" in body:
+                    update_fields_set.add("emailAddresses")
+                if "phoneNumbers" in body:
+                    update_fields_set.add("phoneNumbers")
+                if "organizations" in body:
+                    update_fields_set.add("organizations")
+
+        if not update_bodies:
+            raise UserInputError("No valid update data provided.")
+
+        batch_body = {
+            "contacts": update_bodies,
+            "updateMask": ",".join(update_fields_set),
+            "readMask": DEFAULT_PERSON_FIELDS,
+        }
+
+        result = await asyncio.to_thread(
+            service.people().batchUpdateContacts(body=batch_body).execute
+        )
+
+        update_results = result.get("updateResult", {})
+
+        response = f"Batch Update Results for {user_google_email}:\n\n"
+        response += f"Updated {len(update_results)} contacts:\n\n"
+
+        for rname, update_result in update_results.items():
+            person = update_result.get("person", {})
+            response += _format_contact(person) + "\n\n"
+
+        logger.info(
+            f"Batch updated {len(update_results)} contacts for {user_google_email}"
+        )
+        return response
+
+    # action == "delete"
+    if not contact_ids:
+        raise UserInputError("contact_ids parameter is required for 'delete' action.")
+
+    if len(contact_ids) > 500:
+        raise UserInputError("Maximum 500 contacts can be deleted in a batch.")
+
+    resource_names = []
+    for cid in contact_ids:
+        if not cid.startswith("people/"):
+            resource_names.append(f"people/{cid}")
+        else:
+            resource_names.append(cid)
+
+    batch_body = {"resourceNames": resource_names}
+
+    await asyncio.to_thread(
+        service.people().batchDeleteContacts(body=batch_body).execute
+    )
+
+    response = f"Batch deleted {len(contact_ids)} contacts for {user_google_email}."
+    logger.info(f"Batch deleted {len(contact_ids)} contacts for {user_google_email}")
+    return response
 
 
 @server.tool()
@@ -1004,147 +912,125 @@ async def manage_contact_group(
         f"[manage_contact_group] Invoked. Action: '{action}', Email: '{user_google_email}'"
     )
 
-    try:
-        if action == "create":
-            if not name:
-                raise UserInputError("name is required for 'create' action.")
+    if action == "create":
+        if not name:
+            raise UserInputError("name is required for 'create' action.")
 
-            body = {"contactGroup": {"name": name}}
+        body = {"contactGroup": {"name": name}}
 
-            result = await asyncio.to_thread(
-                service.contactGroups().create(body=body).execute
-            )
+        result = await asyncio.to_thread(
+            service.contactGroups().create(body=body).execute
+        )
 
-            resource_name = result.get("resourceName", "")
-            created_group_id = resource_name.replace("contactGroups/", "")
-            created_name = result.get("name", name)
+        resource_name = result.get("resourceName", "")
+        created_group_id = resource_name.replace("contactGroups/", "")
+        created_name = result.get("name", name)
 
-            response = f"Contact Group Created for {user_google_email}:\n\n"
-            response += f"Name: {created_name}\n"
-            response += f"ID: {created_group_id}\n"
-            response += f"Type: {result.get('groupType', 'USER_CONTACT_GROUP')}\n"
+        response = f"Contact Group Created for {user_google_email}:\n\n"
+        response += f"Name: {created_name}\n"
+        response += f"ID: {created_group_id}\n"
+        response += f"Type: {result.get('groupType', 'USER_CONTACT_GROUP')}\n"
 
-            logger.info(f"Created contact group '{name}' for {user_google_email}")
-            return response
+        logger.info(f"Created contact group '{name}' for {user_google_email}")
+        return response
 
-        # All other actions require group_id
-        if not group_id:
-            raise UserInputError(f"group_id is required for '{action}' action.")
+    # All other actions require group_id
+    if not group_id:
+        raise UserInputError(f"group_id is required for '{action}' action.")
 
-        # Normalize resource name
-        if not group_id.startswith("contactGroups/"):
-            resource_name = f"contactGroups/{group_id}"
-        else:
-            resource_name = group_id
+    # Normalize resource name
+    if not group_id.startswith("contactGroups/"):
+        resource_name = f"contactGroups/{group_id}"
+    else:
+        resource_name = group_id
 
-        if action == "update":
-            if not name:
-                raise UserInputError("name is required for 'update' action.")
+    if action == "update":
+        if not name:
+            raise UserInputError("name is required for 'update' action.")
 
-            body = {"contactGroup": {"name": name}}
-
-            result = await asyncio.to_thread(
-                service.contactGroups()
-                .update(resourceName=resource_name, body=body)
-                .execute
-            )
-
-            updated_name = result.get("name", name)
-
-            response = f"Contact Group Updated for {user_google_email}:\n\n"
-            response += f"Name: {updated_name}\n"
-            response += f"ID: {group_id}\n"
-
-            logger.info(
-                f"Updated contact group {resource_name} for {user_google_email}"
-            )
-            return response
-
-        if action == "delete":
-            await asyncio.to_thread(
-                service.contactGroups()
-                .delete(resourceName=resource_name, deleteContacts=delete_contacts)
-                .execute
-            )
-
-            response = (
-                f"Contact group {group_id} has been deleted for {user_google_email}."
-            )
-            if delete_contacts:
-                response += " Contacts in the group were also deleted."
-            else:
-                response += " Contacts in the group were preserved."
-
-            logger.info(
-                f"Deleted contact group {resource_name} for {user_google_email}"
-            )
-            return response
-
-        # action == "modify_members"
-        if not add_contact_ids and not remove_contact_ids:
-            raise UserInputError(
-                "At least one of add_contact_ids or remove_contact_ids must be provided."
-            )
-
-        modify_body: Dict[str, Any] = {}
-
-        if add_contact_ids:
-            add_names = []
-            for contact_id in add_contact_ids:
-                if not contact_id.startswith("people/"):
-                    add_names.append(f"people/{contact_id}")
-                else:
-                    add_names.append(contact_id)
-            modify_body["resourceNamesToAdd"] = add_names
-
-        if remove_contact_ids:
-            remove_names = []
-            for contact_id in remove_contact_ids:
-                if not contact_id.startswith("people/"):
-                    remove_names.append(f"people/{contact_id}")
-                else:
-                    remove_names.append(contact_id)
-            modify_body["resourceNamesToRemove"] = remove_names
+        body = {"contactGroup": {"name": name}}
 
         result = await asyncio.to_thread(
             service.contactGroups()
-            .members()
-            .modify(resourceName=resource_name, body=modify_body)
+            .update(resourceName=resource_name, body=body)
             .execute
         )
 
-        not_found = result.get("notFoundResourceNames", [])
-        cannot_remove = result.get("canNotRemoveLastContactGroupResourceNames", [])
+        updated_name = result.get("name", name)
 
-        response = f"Contact Group Members Modified for {user_google_email}:\n\n"
-        response += f"Group: {group_id}\n"
+        response = f"Contact Group Updated for {user_google_email}:\n\n"
+        response += f"Name: {updated_name}\n"
+        response += f"ID: {group_id}\n"
 
-        if add_contact_ids:
-            response += f"Added: {len(add_contact_ids)} contacts\n"
-        if remove_contact_ids:
-            response += f"Removed: {len(remove_contact_ids)} contacts\n"
-
-        if not_found:
-            response += f"\nNot found: {', '.join(not_found)}\n"
-        if cannot_remove:
-            response += f"\nCannot remove (last group): {', '.join(cannot_remove)}\n"
-
-        logger.info(
-            f"Modified contact group members for {resource_name} for {user_google_email}"
-        )
+        logger.info(f"Updated contact group {resource_name} for {user_google_email}")
         return response
 
-    except UserInputError:
-        raise
-    except HttpError as error:
-        if error.resp.status == 404:
-            message = f"Contact group not found: {group_id}"
-            logger.warning(message)
-            raise Exception(message)
-        message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    if action == "delete":
+        await asyncio.to_thread(
+            service.contactGroups()
+            .delete(resourceName=resource_name, deleteContacts=delete_contacts)
+            .execute
+        )
+
+        response = f"Contact group {group_id} has been deleted for {user_google_email}."
+        if delete_contacts:
+            response += " Contacts in the group were also deleted."
+        else:
+            response += " Contacts in the group were preserved."
+
+        logger.info(f"Deleted contact group {resource_name} for {user_google_email}")
+        return response
+
+    # action == "modify_members"
+    if not add_contact_ids and not remove_contact_ids:
+        raise UserInputError(
+            "At least one of add_contact_ids or remove_contact_ids must be provided."
+        )
+
+    modify_body: Dict[str, Any] = {}
+
+    if add_contact_ids:
+        add_names = []
+        for contact_id in add_contact_ids:
+            if not contact_id.startswith("people/"):
+                add_names.append(f"people/{contact_id}")
+            else:
+                add_names.append(contact_id)
+        modify_body["resourceNamesToAdd"] = add_names
+
+    if remove_contact_ids:
+        remove_names = []
+        for contact_id in remove_contact_ids:
+            if not contact_id.startswith("people/"):
+                remove_names.append(f"people/{contact_id}")
+            else:
+                remove_names.append(contact_id)
+        modify_body["resourceNamesToRemove"] = remove_names
+
+    result = await asyncio.to_thread(
+        service.contactGroups()
+        .members()
+        .modify(resourceName=resource_name, body=modify_body)
+        .execute
+    )
+
+    not_found = result.get("notFoundResourceNames", [])
+    cannot_remove = result.get("canNotRemoveLastContactGroupResourceNames", [])
+
+    response = f"Contact Group Members Modified for {user_google_email}:\n\n"
+    response += f"Group: {group_id}\n"
+
+    if add_contact_ids:
+        response += f"Added: {len(add_contact_ids)} contacts\n"
+    if remove_contact_ids:
+        response += f"Removed: {len(remove_contact_ids)} contacts\n"
+
+    if not_found:
+        response += f"\nNot found: {', '.join(not_found)}\n"
+    if cannot_remove:
+        response += f"\nCannot remove (last group): {', '.join(cannot_remove)}\n"
+
+    logger.info(
+        f"Modified contact group members for {resource_name} for {user_google_email}"
+    )
+    return response

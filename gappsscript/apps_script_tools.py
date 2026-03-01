@@ -492,7 +492,7 @@ async def manage_deployment(
     """
     action = action.lower().strip()
     if action == "create":
-        if not description:
+        if description is None or description.strip() == "":
             raise ValueError("description is required for create action")
         return await _create_deployment_impl(
             service, user_google_email, script_id, description, version_description
@@ -500,7 +500,7 @@ async def manage_deployment(
     elif action == "update":
         if not deployment_id:
             raise ValueError("deployment_id is required for update action")
-        if description is None or description == "":
+        if description is None or description.strip() == "":
             raise ValueError("description is required for update action")
         return await _update_deployment_impl(
             service, user_google_email, script_id, deployment_id, description

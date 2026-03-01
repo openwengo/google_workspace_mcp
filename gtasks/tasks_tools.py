@@ -204,30 +204,20 @@ async def _create_task_list_impl(
         f"[create_task_list] Invoked. Email: '{user_google_email}', Title: '{title}'"
     )
 
-    try:
-        body = {"title": title}
+    body = {"title": title}
 
-        result = await asyncio.to_thread(service.tasklists().insert(body=body).execute)
+    result = await asyncio.to_thread(service.tasklists().insert(body=body).execute)
 
-        response = f"""Task List Created for {user_google_email}:
+    response = f"""Task List Created for {user_google_email}:
 - Title: {result["title"]}
 - ID: {result["id"]}
 - Created: {result.get("updated", "N/A")}
 - Self Link: {result.get("selfLink", "N/A")}"""
 
-        logger.info(
-            f"Created task list '{title}' with ID {result['id']} for {user_google_email}"
-        )
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(
+        f"Created task list '{title}' with ID {result['id']} for {user_google_email}"
+    )
+    return response
 
 
 async def _update_task_list_impl(
@@ -238,31 +228,21 @@ async def _update_task_list_impl(
         f"[update_task_list] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, New Title: '{title}'"
     )
 
-    try:
-        body = {"id": task_list_id, "title": title}
+    body = {"id": task_list_id, "title": title}
 
-        result = await asyncio.to_thread(
-            service.tasklists().update(tasklist=task_list_id, body=body).execute
-        )
+    result = await asyncio.to_thread(
+        service.tasklists().update(tasklist=task_list_id, body=body).execute
+    )
 
-        response = f"""Task List Updated for {user_google_email}:
+    response = f"""Task List Updated for {user_google_email}:
 - Title: {result["title"]}
 - ID: {result["id"]}
 - Updated: {result.get("updated", "N/A")}"""
 
-        logger.info(
-            f"Updated task list {task_list_id} with new title '{title}' for {user_google_email}"
-        )
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(
+        f"Updated task list {task_list_id} with new title '{title}' for {user_google_email}"
+    )
+    return response
 
 
 async def _delete_task_list_impl(
@@ -273,24 +253,12 @@ async def _delete_task_list_impl(
         f"[delete_task_list] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}"
     )
 
-    try:
-        await asyncio.to_thread(
-            service.tasklists().delete(tasklist=task_list_id).execute
-        )
+    await asyncio.to_thread(service.tasklists().delete(tasklist=task_list_id).execute)
 
-        response = f"Task list {task_list_id} has been deleted for {user_google_email}. All tasks in this list have also been deleted."
+    response = f"Task list {task_list_id} has been deleted for {user_google_email}. All tasks in this list have also been deleted."
 
-        logger.info(f"Deleted task list {task_list_id} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Deleted task list {task_list_id} for {user_google_email}")
+    return response
 
 
 async def _clear_completed_tasks_impl(
@@ -301,24 +269,14 @@ async def _clear_completed_tasks_impl(
         f"[clear_completed_tasks] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}"
     )
 
-    try:
-        await asyncio.to_thread(service.tasks().clear(tasklist=task_list_id).execute)
+    await asyncio.to_thread(service.tasks().clear(tasklist=task_list_id).execute)
 
-        response = f"All completed tasks have been cleared from task list {task_list_id} for {user_google_email}. The tasks are now hidden and won't appear in default task list views."
+    response = f"All completed tasks have been cleared from task list {task_list_id} for {user_google_email}. The tasks are now hidden and won't appear in default task list views."
 
-        logger.info(
-            f"Cleared completed tasks from list {task_list_id} for {user_google_email}"
-        )
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(
+        f"Cleared completed tasks from list {task_list_id} for {user_google_email}"
+    )
+    return response
 
 
 # --- Consolidated manage_task_list tool ---
@@ -710,47 +668,37 @@ async def _create_task_impl(
         f"[create_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Title: '{title}'"
     )
 
-    try:
-        body = {"title": title}
-        if notes:
-            body["notes"] = notes
-        if due:
-            body["due"] = due
+    body = {"title": title}
+    if notes:
+        body["notes"] = notes
+    if due:
+        body["due"] = due
 
-        params = {"tasklist": task_list_id, "body": body}
-        if parent:
-            params["parent"] = parent
-        if previous:
-            params["previous"] = previous
+    params = {"tasklist": task_list_id, "body": body}
+    if parent:
+        params["parent"] = parent
+    if previous:
+        params["previous"] = previous
 
-        result = await asyncio.to_thread(service.tasks().insert(**params).execute)
+    result = await asyncio.to_thread(service.tasks().insert(**params).execute)
 
-        response = f"""Task Created for {user_google_email}:
+    response = f"""Task Created for {user_google_email}:
 - Title: {result["title"]}
 - ID: {result["id"]}
 - Status: {result.get("status", "N/A")}
 - Updated: {result.get("updated", "N/A")}"""
 
-        if result.get("due"):
-            response += f"\n- Due Date: {result['due']}"
-        if result.get("notes"):
-            response += f"\n- Notes: {result['notes']}"
-        if result.get("webViewLink"):
-            response += f"\n- Web View Link: {result['webViewLink']}"
+    if result.get("due"):
+        response += f"\n- Due Date: {result['due']}"
+    if result.get("notes"):
+        response += f"\n- Notes: {result['notes']}"
+    if result.get("webViewLink"):
+        response += f"\n- Web View Link: {result['webViewLink']}"
 
-        logger.info(
-            f"Created task '{title}' with ID {result['id']} for {user_google_email}"
-        )
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(
+        f"Created task '{title}' with ID {result['id']} for {user_google_email}"
+    )
+    return response
 
 
 async def _update_task_impl(
@@ -768,60 +716,48 @@ async def _update_task_impl(
         f"[update_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
 
-    try:
-        # First get the current task to build the update body
-        current_task = await asyncio.to_thread(
-            service.tasks().get(tasklist=task_list_id, task=task_id).execute
-        )
+    # First get the current task to build the update body
+    current_task = await asyncio.to_thread(
+        service.tasks().get(tasklist=task_list_id, task=task_id).execute
+    )
 
-        body = {
-            "id": task_id,
-            "title": title if title is not None else current_task.get("title", ""),
-            "status": status
-            if status is not None
-            else current_task.get("status", "needsAction"),
-        }
+    body = {
+        "id": task_id,
+        "title": title if title is not None else current_task.get("title", ""),
+        "status": status
+        if status is not None
+        else current_task.get("status", "needsAction"),
+    }
 
-        if notes is not None:
-            body["notes"] = notes
-        elif current_task.get("notes"):
-            body["notes"] = current_task["notes"]
+    if notes is not None:
+        body["notes"] = notes
+    elif current_task.get("notes"):
+        body["notes"] = current_task["notes"]
 
-        if due is not None:
-            body["due"] = due
-        elif current_task.get("due"):
-            body["due"] = current_task["due"]
+    if due is not None:
+        body["due"] = due
+    elif current_task.get("due"):
+        body["due"] = current_task["due"]
 
-        result = await asyncio.to_thread(
-            service.tasks()
-            .update(tasklist=task_list_id, task=task_id, body=body)
-            .execute
-        )
+    result = await asyncio.to_thread(
+        service.tasks().update(tasklist=task_list_id, task=task_id, body=body).execute
+    )
 
-        response = f"""Task Updated for {user_google_email}:
+    response = f"""Task Updated for {user_google_email}:
 - Title: {result["title"]}
 - ID: {result["id"]}
 - Status: {result.get("status", "N/A")}
 - Updated: {result.get("updated", "N/A")}"""
 
-        if result.get("due"):
-            response += f"\n- Due Date: {result['due']}"
-        if result.get("notes"):
-            response += f"\n- Notes: {result['notes']}"
-        if result.get("completed"):
-            response += f"\n- Completed: {result['completed']}"
+    if result.get("due"):
+        response += f"\n- Due Date: {result['due']}"
+    if result.get("notes"):
+        response += f"\n- Notes: {result['notes']}"
+    if result.get("completed"):
+        response += f"\n- Completed: {result['completed']}"
 
-        logger.info(f"Updated task {task_id} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Updated task {task_id} for {user_google_email}")
+    return response
 
 
 async def _delete_task_impl(
@@ -832,24 +768,14 @@ async def _delete_task_impl(
         f"[delete_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
 
-    try:
-        await asyncio.to_thread(
-            service.tasks().delete(tasklist=task_list_id, task=task_id).execute
-        )
+    await asyncio.to_thread(
+        service.tasks().delete(tasklist=task_list_id, task=task_id).execute
+    )
 
-        response = f"Task {task_id} has been deleted from task list {task_list_id} for {user_google_email}."
+    response = f"Task {task_id} has been deleted from task list {task_list_id} for {user_google_email}."
 
-        logger.info(f"Deleted task {task_id} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Deleted task {task_id} for {user_google_email}")
+    return response
 
 
 async def _move_task_impl(
@@ -866,50 +792,40 @@ async def _move_task_impl(
         f"[move_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
 
-    try:
-        params = {"tasklist": task_list_id, "task": task_id}
-        if parent:
-            params["parent"] = parent
-        if previous:
-            params["previous"] = previous
-        if destination_task_list:
-            params["destinationTasklist"] = destination_task_list
+    params = {"tasklist": task_list_id, "task": task_id}
+    if parent:
+        params["parent"] = parent
+    if previous:
+        params["previous"] = previous
+    if destination_task_list:
+        params["destinationTasklist"] = destination_task_list
 
-        result = await asyncio.to_thread(service.tasks().move(**params).execute)
+    result = await asyncio.to_thread(service.tasks().move(**params).execute)
 
-        response = f"""Task Moved for {user_google_email}:
+    response = f"""Task Moved for {user_google_email}:
 - Title: {result["title"]}
 - ID: {result["id"]}
 - Status: {result.get("status", "N/A")}
 - Updated: {result.get("updated", "N/A")}"""
 
-        if result.get("parent"):
-            response += f"\n- Parent Task ID: {result['parent']}"
-        if result.get("position"):
-            response += f"\n- Position: {result['position']}"
+    if result.get("parent"):
+        response += f"\n- Parent Task ID: {result['parent']}"
+    if result.get("position"):
+        response += f"\n- Position: {result['position']}"
 
-        move_details = []
-        if destination_task_list:
-            move_details.append(f"moved to task list {destination_task_list}")
-        if parent:
-            move_details.append(f"made a subtask of {parent}")
-        if previous:
-            move_details.append(f"positioned after {previous}")
+    move_details = []
+    if destination_task_list:
+        move_details.append(f"moved to task list {destination_task_list}")
+    if parent:
+        move_details.append(f"made a subtask of {parent}")
+    if previous:
+        move_details.append(f"positioned after {previous}")
 
-        if move_details:
-            response += f"\n- Move Details: {', '.join(move_details)}"
+    if move_details:
+        response += f"\n- Move Details: {', '.join(move_details)}"
 
-        logger.info(f"Moved task {task_id} for {user_google_email}")
-        return response
-
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    logger.info(f"Moved task {task_id} for {user_google_email}")
+    return response
 
 
 # --- Consolidated manage_task tool ---
