@@ -100,19 +100,11 @@ def _wrap_well_known_endpoint(endpoint, etag: str):
                 elif message["type"] == "http.response.body":
                     body_parts.append(message.get("body", b""))
 
-            await endpoint(request.scope, request._receive, send)
+            await endpoint(request.scope, request.receive, send)
 
-            headers = {
-                (k.decode() if isinstance(k, bytes) else k): (
-                    v.decode() if isinstance(v, bytes) else v
-                )
-                for k, v in raw_headers
-            }
-            response = Response(
-                content=b"".join(body_parts),
-                status_code=status_code,
-                headers=headers,
-            )
+            response = Response(content=b"".join(body_parts), status_code=status_code)
+            if raw_headers:
+                response.raw_headers = raw_headers
             response.headers["Cache-Control"] = "no-store, must-revalidate"
             response.headers["ETag"] = etag
             return response
