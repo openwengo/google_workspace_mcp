@@ -484,7 +484,7 @@ async def manage_deployment(
         action: Action to perform - "create", "update", or "delete"
         script_id: The script project ID
         deployment_id: The deployment ID (required for update and delete)
-        description: Deployment description (required for create, optional for update)
+        description: Deployment description (required for create and update)
         version_description: Optional version description (for create only)
 
     Returns:
