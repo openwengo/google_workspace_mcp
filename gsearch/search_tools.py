@@ -232,5 +232,3 @@ async def get_search_engine_info(service, user_google_email: str) -> str:
 
     logger.info(f"Search engine info retrieved successfully for {user_google_email}")
     return confirmation_message
-
-

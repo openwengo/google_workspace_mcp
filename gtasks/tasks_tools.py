@@ -377,19 +377,11 @@ async def manage_task_list(
 
     # action == "clear_completed"
     if not task_list_id:
-        raise ValueError(
-            "'task_list_id' is required for the 'clear_completed' action."
-        )
+        raise ValueError("'task_list_id' is required for the 'clear_completed' action.")
     return await _clear_completed_tasks_impl(service, user_google_email, task_list_id)
 
 
 # --- Legacy task list tools (wrappers around _impl functions) ---
-
-
-
-
-
-
 
 
 @server.tool()  # type: ignore
@@ -1017,13 +1009,3 @@ async def manage_task(
 
 
 # --- Legacy task tools (wrappers around _impl functions) ---
-
-
-
-
-
-
-
-
-
-

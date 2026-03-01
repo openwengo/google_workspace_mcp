@@ -534,7 +534,6 @@ async def get_events(
     return text_output
 
 
-
 # ---------------------------------------------------------------------------
 # Internal implementation functions for event create/modify/delete.
 # These are called by both the consolidated ``manage_event`` tool and the
@@ -787,7 +786,6 @@ def _normalize_attendees(
                 f"[_normalize_attendees] Invalid attendee format: {att}, skipping"
             )
     return normalized if normalized else None
-
 
 
 async def _modify_event_impl(
@@ -1139,7 +1137,9 @@ async def manage_event(
     action_lower = action.lower().strip()
     if action_lower == "create":
         if not summary or not start_time or not end_time:
-            raise ValueError("summary, start_time, and end_time are required for create action")
+            raise ValueError(
+                "summary, start_time, and end_time are required for create action"
+            )
         return await _create_event_impl(
             service=service,
             user_google_email=user_google_email,
@@ -1154,7 +1154,9 @@ async def manage_event(
             attachments=attachments,
             add_google_meet=add_google_meet or False,
             reminders=reminders,
-            use_default_reminders=use_default_reminders if use_default_reminders is not None else True,
+            use_default_reminders=use_default_reminders
+            if use_default_reminders is not None
+            else True,
             transparency=transparency,
             visibility=visibility,
             guests_can_modify=guests_can_modify,
@@ -1196,18 +1198,14 @@ async def manage_event(
             calendar_id=calendar_id,
         )
     else:
-        raise ValueError(f"Invalid action '{action_lower}'. Must be 'create', 'update', or 'delete'.")
+        raise ValueError(
+            f"Invalid action '{action_lower}'. Must be 'create', 'update', or 'delete'."
+        )
 
 
 # ---------------------------------------------------------------------------
 # Legacy single-action tools (deprecated -- prefer ``manage_event``)
 # ---------------------------------------------------------------------------
-
-
-
-
-
-
 
 
 @server.tool()

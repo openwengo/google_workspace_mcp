@@ -810,17 +810,12 @@ async def manage_conditional_formatting(
         condition_values_list = _parse_condition_values(condition_values)
         gradient_points_list = _parse_gradient_points(gradient_points)
 
-        sheets, sheet_titles = await _fetch_sheets_with_rules(
-            service, spreadsheet_id
-        )
+        sheets, sheet_titles = await _fetch_sheets_with_rules(service, spreadsheet_id)
         grid_range = _parse_a1_range(range_name, sheets)
 
         target_sheet = None
         for sheet in sheets:
-            if (
-                sheet.get("properties", {}).get("sheetId")
-                == grid_range.get("sheetId")
-            ):
+            if sheet.get("properties", {}).get("sheetId") == grid_range.get("sheetId"):
                 target_sheet = sheet
                 break
         if target_sheet is None:
@@ -869,9 +864,7 @@ async def manage_conditional_formatting(
         if rule_index is not None:
             add_rule_request["index"] = rule_index
 
-        request_body = {
-            "requests": [{"addConditionalFormatRule": add_rule_request}]
-        }
+        request_body = {"requests": [{"addConditionalFormatRule": add_rule_request}]}
 
         await asyncio.to_thread(
             service.spreadsheets()
@@ -879,9 +872,7 @@ async def manage_conditional_formatting(
             .execute
         )
 
-        format_desc = (
-            ", ".join(applied_parts) if applied_parts else "format applied"
-        )
+        format_desc = ", ".join(applied_parts) if applied_parts else "format applied"
 
         sheet_title = target_sheet.get("properties", {}).get("title", "Unknown")
         state_text = _format_conditional_rules_section(
@@ -906,18 +897,15 @@ async def manage_conditional_formatting(
         condition_values_list = _parse_condition_values(condition_values)
         gradient_points_list = _parse_gradient_points(gradient_points)
 
-        sheets, sheet_titles = await _fetch_sheets_with_rules(
-            service, spreadsheet_id
-        )
+        sheets, sheet_titles = await _fetch_sheets_with_rules(service, spreadsheet_id)
 
         target_sheet = None
         grid_range = None
         if range_name:
             grid_range = _parse_a1_range(range_name, sheets)
             for sheet in sheets:
-                if (
-                    sheet.get("properties", {}).get("sheetId")
-                    == grid_range.get("sheetId")
+                if sheet.get("properties", {}).get("sheetId") == grid_range.get(
+                    "sheetId"
                 ):
                     target_sheet = sheet
                     break
@@ -979,17 +967,11 @@ async def manage_conditional_formatting(
         else:
             existing_boolean = existing_rule.get("booleanRule", {})
             existing_condition = existing_boolean.get("condition", {})
-            existing_format = copy.deepcopy(
-                existing_boolean.get("format", {})
-            )
+            existing_format = copy.deepcopy(existing_boolean.get("format", {}))
 
-            cond_type = (
-                condition_type or existing_condition.get("type", "")
-            ).upper()
+            cond_type = (condition_type or existing_condition.get("type", "")).upper()
             if not cond_type:
-                raise UserInputError(
-                    "condition_type is required for boolean rules."
-                )
+                raise UserInputError("condition_type is required for boolean rules.")
             if cond_type not in CONDITION_TYPES:
                 raise UserInputError(
                     f"condition_type must be one of {sorted(CONDITION_TYPES)}."
@@ -997,15 +979,12 @@ async def manage_conditional_formatting(
 
             if condition_values_list is not None:
                 cond_values = [
-                    {"userEnteredValue": str(val)}
-                    for val in condition_values_list
+                    {"userEnteredValue": str(val)} for val in condition_values_list
                 ]
             else:
                 cond_values = existing_condition.get("values")
 
-            new_format = (
-                copy.deepcopy(existing_format) if existing_format else {}
-            )
+            new_format = copy.deepcopy(existing_format) if existing_format else {}
             if background_color is not None:
                 bg_color_parsed = _parse_hex_color(background_color)
                 if bg_color_parsed:
@@ -1014,9 +993,7 @@ async def manage_conditional_formatting(
                     del new_format["backgroundColor"]
             if text_color is not None:
                 text_color_parsed = _parse_hex_color(text_color)
-                text_format = copy.deepcopy(
-                    new_format.get("textFormat", {})
-                )
+                text_format = copy.deepcopy(new_format.get("textFormat", {}))
                 if text_color_parsed:
                     text_format["foregroundColor"] = text_color_parsed
                 elif "foregroundColor" in text_format:
@@ -1096,9 +1073,7 @@ async def manage_conditional_formatting(
         if not isinstance(rule_index, int) or rule_index < 0:
             raise UserInputError("rule_index must be a non-negative integer.")
 
-        sheets, sheet_titles = await _fetch_sheets_with_rules(
-            service, spreadsheet_id
-        )
+        sheets, sheet_titles = await _fetch_sheets_with_rules(service, spreadsheet_id)
         target_sheet = _select_sheet(sheets, sheet_name)
 
         sheet_props = target_sheet.get("properties", {})

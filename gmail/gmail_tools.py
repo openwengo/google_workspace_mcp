@@ -1951,7 +1951,9 @@ async def manage_gmail_filter(
     action_lower = action.lower().strip()
     if action_lower == "create":
         if not criteria or not filter_action:
-            raise ValueError("criteria and filter_action are required for create action")
+            raise ValueError(
+                "criteria and filter_action are required for create action"
+            )
         logger.info("[manage_gmail_filter] Creating filter")
         filter_body = {"criteria": criteria, "action": filter_action}
         created_filter = await asyncio.to_thread(
@@ -1971,7 +1973,11 @@ async def manage_gmail_filter(
             service.users().settings().filters().get(userId="me", id=filter_id).execute
         )
         await asyncio.to_thread(
-            service.users().settings().filters().delete(userId="me", id=filter_id).execute
+            service.users()
+            .settings()
+            .filters()
+            .delete(userId="me", id=filter_id)
+            .execute
         )
         criteria_info = filter_details.get("criteria", {})
         action_info = filter_details.get("action", {})
@@ -1982,11 +1988,9 @@ async def manage_gmail_filter(
             f"Action: {action_info or '(none)'}"
         )
     else:
-        raise ValueError(f"Invalid action '{action_lower}'. Must be 'create' or 'delete'.")
-
-
-
-
+        raise ValueError(
+            f"Invalid action '{action_lower}'. Must be 'create' or 'delete'."
+        )
 
 
 @server.tool()

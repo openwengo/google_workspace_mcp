@@ -17,8 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 async def _manage_comment_dispatch(
-    service, app_name: str, file_id: str, action: str,
-    comment_content: Optional[str] = None, comment_id: Optional[str] = None,
+    service,
+    app_name: str,
+    file_id: str,
+    action: str,
+    comment_content: Optional[str] = None,
+    comment_id: Optional[str] = None,
 ) -> str:
     """Route comment management actions to the appropriate implementation."""
     action_lower = action.lower().strip()
@@ -28,14 +32,20 @@ async def _manage_comment_dispatch(
         return await _create_comment_impl(service, app_name, file_id, comment_content)
     elif action_lower == "reply":
         if not comment_id or not comment_content:
-            raise ValueError("comment_id and comment_content are required for reply action")
-        return await _reply_to_comment_impl(service, app_name, file_id, comment_id, comment_content)
+            raise ValueError(
+                "comment_id and comment_content are required for reply action"
+            )
+        return await _reply_to_comment_impl(
+            service, app_name, file_id, comment_id, comment_content
+        )
     elif action_lower == "resolve":
         if not comment_id:
             raise ValueError("comment_id is required for resolve action")
         return await _resolve_comment_impl(service, app_name, file_id, comment_id)
     else:
-        raise ValueError(f"Invalid action '{action_lower}'. Must be 'create', 'reply', or 'resolve'.")
+        raise ValueError(
+            f"Invalid action '{action_lower}'. Must be 'create', 'reply', or 'resolve'."
+        )
 
 
 def create_comment_tools(app_name: str, file_id_param: str):
@@ -67,8 +77,12 @@ def create_comment_tools(app_name: str, file_id_param: str):
         @require_google_service("drive", "drive_file")
         @handle_http_errors(manage_func_name, service_type="drive")
         async def manage_comment(
-            service, user_google_email: str, document_id: str, action: str,
-            comment_content: Optional[str] = None, comment_id: Optional[str] = None,
+            service,
+            user_google_email: str,
+            document_id: str,
+            action: str,
+            comment_content: Optional[str] = None,
+            comment_id: Optional[str] = None,
         ) -> str:
             """Manage comments on a Google Document.
 
@@ -94,8 +108,12 @@ def create_comment_tools(app_name: str, file_id_param: str):
         @require_google_service("drive", "drive_file")
         @handle_http_errors(manage_func_name, service_type="drive")
         async def manage_comment(
-            service, user_google_email: str, spreadsheet_id: str, action: str,
-            comment_content: Optional[str] = None, comment_id: Optional[str] = None,
+            service,
+            user_google_email: str,
+            spreadsheet_id: str,
+            action: str,
+            comment_content: Optional[str] = None,
+            comment_id: Optional[str] = None,
         ) -> str:
             """Manage comments on a Google Spreadsheet.
 
@@ -121,8 +139,12 @@ def create_comment_tools(app_name: str, file_id_param: str):
         @require_google_service("drive", "drive_file")
         @handle_http_errors(manage_func_name, service_type="drive")
         async def manage_comment(
-            service, user_google_email: str, presentation_id: str, action: str,
-            comment_content: Optional[str] = None, comment_id: Optional[str] = None,
+            service,
+            user_google_email: str,
+            presentation_id: str,
+            action: str,
+            comment_content: Optional[str] = None,
+            comment_id: Optional[str] = None,
         ) -> str:
             """Manage comments on a Google Presentation.
 

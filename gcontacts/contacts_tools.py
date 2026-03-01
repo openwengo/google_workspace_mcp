@@ -775,9 +775,7 @@ async def manage_contacts_batch(
     try:
         if action == "create":
             if not contacts:
-                raise Exception(
-                    "contacts parameter is required for 'create' action."
-                )
+                raise Exception("contacts parameter is required for 'create' action.")
 
             if len(contacts) > 200:
                 raise Exception("Maximum 200 contacts can be created in a batch.")
@@ -823,9 +821,7 @@ async def manage_contacts_batch(
 
         if action == "update":
             if not updates:
-                raise Exception(
-                    "updates parameter is required for 'update' action."
-                )
+                raise Exception("updates parameter is required for 'update' action.")
 
             if len(updates) > 200:
                 raise Exception("Maximum 200 contacts can be updated in a batch.")
@@ -922,9 +918,7 @@ async def manage_contacts_batch(
 
         # action == "delete"
         if not contact_ids:
-            raise Exception(
-                "contact_ids parameter is required for 'delete' action."
-            )
+            raise Exception("contact_ids parameter is required for 'delete' action.")
 
         if len(contact_ids) > 500:
             raise Exception("Maximum 500 contacts can be deleted in a batch.")
@@ -1063,7 +1057,9 @@ async def manage_contact_group(
                 .execute
             )
 
-            response = f"Contact group {group_id} has been deleted for {user_google_email}."
+            response = (
+                f"Contact group {group_id} has been deleted for {user_google_email}."
+            )
             if delete_contacts:
                 response += " Contacts in the group were also deleted."
             else:
@@ -1140,5 +1136,3 @@ async def manage_contact_group(
         message = f"Unexpected error: {e}."
         logger.exception(message)
         raise Exception(message)
-
-
