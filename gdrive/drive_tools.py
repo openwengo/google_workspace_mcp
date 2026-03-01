@@ -1854,9 +1854,7 @@ async def manage_drive_access(
         validate_share_type(share_type)
 
         if share_type in ("user", "group") and not share_with:
-            raise ValueError(
-                f"share_with is required for share_type '{share_type}'"
-            )
+            raise ValueError(f"share_with is required for share_type '{share_type}'")
         if share_type == "domain" and not share_with:
             raise ValueError(
                 "share_with (domain name) is required for share_type 'domain'"
@@ -1898,14 +1896,16 @@ async def manage_drive_access(
             service.permissions().create(**create_params).execute
         )
 
-        return "\n".join([
-            f"Successfully shared '{file_metadata.get('name', 'Unknown')}'",
-            "",
-            "Permission created:",
-            f"  - {format_permission_info(created_permission)}",
-            "",
-            f"View link: {file_metadata.get('webViewLink', 'N/A')}",
-        ])
+        return "\n".join(
+            [
+                f"Successfully shared '{file_metadata.get('name', 'Unknown')}'",
+                "",
+                "Permission created:",
+                f"  - {format_permission_info(created_permission)}",
+                "",
+                f"View link: {file_metadata.get('webViewLink', 'N/A')}",
+            ]
+        )
 
     # --- grant_batch: share with multiple recipients ---
     if action == "grant_batch":
@@ -2001,10 +2001,12 @@ async def manage_drive_access(
             "Results:",
         ]
         output_parts.extend(results)
-        output_parts.extend([
-            "",
-            f"View link: {file_metadata.get('webViewLink', 'N/A')}",
-        ])
+        output_parts.extend(
+            [
+                "",
+                f"View link: {file_metadata.get('webViewLink', 'N/A')}",
+            ]
+        )
         return "\n".join(output_parts)
 
     # --- update: modify an existing permission ---
@@ -2056,12 +2058,14 @@ async def manage_drive_access(
             .execute
         )
 
-        return "\n".join([
-            f"Successfully updated permission on '{file_metadata.get('name', 'Unknown')}'",
-            "",
-            "Updated permission:",
-            f"  - {format_permission_info(updated_permission)}",
-        ])
+        return "\n".join(
+            [
+                f"Successfully updated permission on '{file_metadata.get('name', 'Unknown')}'",
+                "",
+                "Updated permission:",
+                f"  - {format_permission_info(updated_permission)}",
+            ]
+        )
 
     # --- revoke: remove an existing permission ---
     if action == "revoke":
@@ -2083,11 +2087,13 @@ async def manage_drive_access(
             .execute
         )
 
-        return "\n".join([
-            f"Successfully removed permission from '{file_metadata.get('name', 'Unknown')}'",
-            "",
-            f"Permission ID '{permission_id}' has been revoked.",
-        ])
+        return "\n".join(
+            [
+                f"Successfully removed permission from '{file_metadata.get('name', 'Unknown')}'",
+                "",
+                f"Permission ID '{permission_id}' has been revoked.",
+            ]
+        )
 
     # --- transfer_owner: transfer file ownership ---
     # action == "transfer_owner"
@@ -2132,14 +2138,6 @@ async def manage_drive_access(
     output_parts.extend(["", "Note: Previous owner now has editor access."])
 
     return "\n".join(output_parts)
-
-
-
-
-
-
-
-
 
 
 @server.tool()
@@ -2212,8 +2210,6 @@ async def copy_drive_file(
     ]
 
     return "\n".join(output_parts)
-
-
 
 
 @server.tool()

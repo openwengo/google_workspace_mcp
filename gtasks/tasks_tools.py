@@ -386,12 +386,6 @@ async def manage_task_list(
 # --- Legacy task list tools (wrappers around _impl functions) ---
 
 
-
-
-
-
-
-
 @server.tool()  # type: ignore
 @require_google_service("tasks", "tasks_read")  # type: ignore
 @handle_http_errors("list_tasks", service_type="tasks")  # type: ignore
@@ -1017,12 +1011,3 @@ async def manage_task(
 
 
 # --- Legacy task tools (wrappers around _impl functions) ---
-
-
-
-
-
-
-
-
-

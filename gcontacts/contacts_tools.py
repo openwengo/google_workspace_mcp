@@ -1067,7 +1067,9 @@ async def manage_contact_group(
                 .execute
             )
 
-            response = f"Contact group {group_id} has been deleted for {user_google_email}."
+            response = (
+                f"Contact group {group_id} has been deleted for {user_google_email}."
+            )
             if delete_contacts:
                 response += " Contacts in the group were also deleted."
             else:
@@ -1146,4 +1148,3 @@ async def manage_contact_group(
         message = f"Unexpected error: {e}."
         logger.exception(message)
         raise Exception(message)
-

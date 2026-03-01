@@ -512,9 +512,9 @@ async def manage_deployment(
             service, user_google_email, script_id, deployment_id
         )
     else:
-        raise ValueError(f"Invalid action '{action}'. Must be 'create', 'update', or 'delete'.")
-
-
+        raise ValueError(
+            f"Invalid action '{action}'. Must be 'create', 'update', or 'delete'."
+        )
 
 
 async def _list_deployments_impl(
@@ -604,8 +604,6 @@ async def _update_deployment_impl(
     return "\n".join(output)
 
 
-
-
 async def _delete_deployment_impl(
     service: Any,
     user_google_email: str,
@@ -628,8 +626,6 @@ async def _delete_deployment_impl(
 
     logger.info(f"[delete_deployment] Deleted deployment {deployment_id}")
     return output
-
-
 
 
 async def _list_script_processes_impl(
