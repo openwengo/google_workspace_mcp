@@ -341,7 +341,7 @@ async def manage_task_list(
     return await _clear_completed_tasks_impl(service, user_google_email, task_list_id)
 
 
-# --- Legacy task list tools (wrappers around _impl functions) ---
+# --- Task tools ---
 
 
 @server.tool()  # type: ignore
@@ -871,6 +871,12 @@ async def manage_task(
         f"[manage_task] Invoked. Email: '{user_google_email}', Action: '{action}', Task List ID: {task_list_id}"
     )
 
+    allowed_statuses = {"needsAction", "completed"}
+    if status is not None and status not in allowed_statuses:
+        raise UserInputError(
+            "invalid status: must be 'needsAction' or 'completed'"
+        )
+
     valid_actions = ("create", "update", "delete", "move")
     if action not in valid_actions:
         raise UserInputError(
@@ -878,6 +884,8 @@ async def manage_task(
         )
 
     if action == "create":
+        if status is not None:
+            raise UserInputError("'status' is only supported for the 'update' action.")
         if not title:
             raise UserInputError("'title' is required for the 'create' action.")
         return await _create_task_impl(
@@ -892,6 +900,10 @@ async def manage_task(
         )
 
     if action == "update":
+        if status is not None and status not in allowed_statuses:
+            raise UserInputError(
+                "invalid status: must be 'needsAction' or 'completed'"
+            )
         if not task_id:
             raise UserInputError("'task_id' is required for the 'update' action.")
         return await _update_task_impl(
@@ -924,6 +936,3 @@ async def manage_task(
         previous=previous,
         destination_task_list=destination_task_list,
     )
-
-
-# --- Legacy task tools (wrappers around _impl functions) ---

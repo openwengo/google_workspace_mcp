@@ -249,10 +249,14 @@ async def list_contacts(
     """
     logger.info(f"[list_contacts] Invoked. Email: '{user_google_email}'")
 
+    if page_size < 1:
+        raise UserInputError("page_size must be >= 1")
+    page_size = min(page_size, 1000)
+
     params: Dict[str, Any] = {
         "resourceName": "people/me",
         "personFields": DEFAULT_PERSON_FIELDS,
-        "pageSize": min(page_size, 1000),
+        "pageSize": page_size,
     }
 
     if page_token:
@@ -350,6 +354,10 @@ async def search_contacts(
         f"[search_contacts] Invoked. Email: '{user_google_email}', Query: '{query}'"
     )
 
+    if page_size < 1:
+        raise UserInputError("page_size must be >= 1")
+    page_size = min(page_size, 30)
+
     # Warm up the search cache if needed
     await _warmup_search_cache(service, user_google_email)
 
@@ -358,7 +366,7 @@ async def search_contacts(
         .searchContacts(
             query=query,
             readMask=DEFAULT_PERSON_FIELDS,
-            pageSize=min(page_size, 30),
+            pageSize=page_size,
         )
         .execute
     )
@@ -561,8 +569,12 @@ async def list_contact_groups(
     """
     logger.info(f"[list_contact_groups] Invoked. Email: '{user_google_email}'")
 
+    if page_size < 1:
+        raise UserInputError("page_size must be >= 1")
+    page_size = min(page_size, 1000)
+
     params: Dict[str, Any] = {
-        "pageSize": min(page_size, 1000),
+        "pageSize": page_size,
         "groupFields": CONTACT_GROUP_FIELDS,
     }
 
@@ -628,11 +640,15 @@ async def get_contact_group(
         f"[get_contact_group] Invoked. Email: '{user_google_email}', Group: {resource_name}"
     )
 
+    if max_members < 1:
+        raise UserInputError("max_members must be >= 1")
+    max_members = min(max_members, 1000)
+
     result = await asyncio.to_thread(
         service.contactGroups()
         .get(
             resourceName=resource_name,
-            maxMembers=min(max_members, 1000),
+            maxMembers=max_members,
             groupFields=CONTACT_GROUP_FIELDS,
         )
         .execute
