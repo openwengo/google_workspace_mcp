@@ -295,6 +295,7 @@ def create_oauth_flow(
     redirect_uri: str,
     state: Optional[str] = None,
     code_verifier: Optional[str] = None,
+    autogenerate_code_verifier: bool = True,
 ) -> Flow:
     """Creates an OAuth flow using environment variables or client secrets file."""
     flow_kwargs = {
@@ -308,10 +309,10 @@ def create_oauth_flow(
         flow_kwargs["autogenerate_code_verifier"] = False
     else:
         # Generate PKCE code verifier for the initial auth flow.
-        # Without this, oauthlib 3.2+ adds code_challenge to the auth URL
-        # at the session level, but Flow.code_verifier stays None.
-        # Google then rejects the token exchange with "Missing code verifier".
-        flow_kwargs["autogenerate_code_verifier"] = True
+        # google-auth-oauthlib's from_client_* helpers pass
+        # autogenerate_code_verifier=None unless explicitly provided, which
+        # prevents Flow from generating and storing a code_verifier.
+        flow_kwargs["autogenerate_code_verifier"] = autogenerate_code_verifier
 
     # Try environment variables first
     env_config = load_client_secrets_from_env()
@@ -526,6 +527,7 @@ def handle_auth_callback(
             redirect_uri=redirect_uri,
             state=state,
             code_verifier=state_info.get("code_verifier"),
+            autogenerate_code_verifier=False,
         )
 
         # Exchange the authorization code for credentials
