@@ -13,7 +13,7 @@ from mcp import Resource
 
 from auth.service_decorator import require_google_service
 from core.server import server
-from core.utils import handle_http_errors
+from core.utils import UserInputError, handle_http_errors
 
 logger = logging.getLogger(__name__)
 
@@ -449,7 +449,7 @@ async def manage_contact(
     """
     action = action.lower().strip()
     if action not in ("create", "update", "delete"):
-        raise Exception(
+        raise UserInputError(
             f"Invalid action '{action}'. Must be 'create', 'update', or 'delete'."
         )
 
@@ -470,7 +470,7 @@ async def manage_contact(
             )
 
             if not body:
-                raise Exception(
+                raise UserInputError(
                     "At least one field (name, email, phone, etc.) must be provided."
                 )
 
@@ -489,7 +489,7 @@ async def manage_contact(
 
         # update and delete both require contact_id
         if not contact_id:
-            raise Exception(f"contact_id is required for '{action}' action.")
+            raise UserInputError(f"contact_id is required for '{action}' action.")
 
         # Normalize resource name
         if not contact_id.startswith("people/"):
@@ -520,7 +520,7 @@ async def manage_contact(
             )
 
             if not body:
-                raise Exception(
+                raise UserInputError(
                     "At least one field (name, email, phone, etc.) must be provided."
                 )
 
@@ -566,6 +566,8 @@ async def manage_contact(
         logger.info(f"Deleted contact {resource_name} for {user_google_email}")
         return response
 
+    except UserInputError:
+        raise
     except HttpError as error:
         if error.resp.status == 404:
             message = f"Contact not found: {contact_id}"
@@ -764,7 +766,7 @@ async def manage_contacts_batch(
     """
     action = action.lower().strip()
     if action not in ("create", "update", "delete"):
-        raise Exception(
+        raise UserInputError(
             f"Invalid action '{action}'. Must be 'create', 'update', or 'delete'."
         )
 
@@ -775,12 +777,12 @@ async def manage_contacts_batch(
     try:
         if action == "create":
             if not contacts:
-                raise Exception(
+                raise UserInputError(
                     "contacts parameter is required for 'create' action."
                 )
 
             if len(contacts) > 200:
-                raise Exception("Maximum 200 contacts can be created in a batch.")
+                raise UserInputError("Maximum 200 contacts can be created in a batch.")
 
             contact_bodies = []
             for contact in contacts:
@@ -796,7 +798,7 @@ async def manage_contacts_batch(
                     contact_bodies.append({"contactPerson": body})
 
             if not contact_bodies:
-                raise Exception("No valid contact data provided.")
+                raise UserInputError("No valid contact data provided.")
 
             batch_body = {
                 "contacts": contact_bodies,
@@ -823,19 +825,19 @@ async def manage_contacts_batch(
 
         if action == "update":
             if not updates:
-                raise Exception(
+                raise UserInputError(
                     "updates parameter is required for 'update' action."
                 )
 
             if len(updates) > 200:
-                raise Exception("Maximum 200 contacts can be updated in a batch.")
+                raise UserInputError("Maximum 200 contacts can be updated in a batch.")
 
             # Fetch all contacts to get their etags
             resource_names = []
             for update in updates:
                 cid = update.get("contact_id")
                 if not cid:
-                    raise Exception("Each update must include a contact_id.")
+                    raise UserInputError("Each update must include a contact_id.")
                 if not cid.startswith("people/"):
                     cid = f"people/{cid}"
                 resource_names.append(cid)
@@ -894,7 +896,7 @@ async def manage_contacts_batch(
                         update_fields_set.add("organizations")
 
             if not update_bodies:
-                raise Exception("No valid update data provided.")
+                raise UserInputError("No valid update data provided.")
 
             batch_body = {
                 "contacts": update_bodies,
@@ -922,12 +924,12 @@ async def manage_contacts_batch(
 
         # action == "delete"
         if not contact_ids:
-            raise Exception(
+            raise UserInputError(
                 "contact_ids parameter is required for 'delete' action."
             )
 
         if len(contact_ids) > 500:
-            raise Exception("Maximum 500 contacts can be deleted in a batch.")
+            raise UserInputError("Maximum 500 contacts can be deleted in a batch.")
 
         resource_names = []
         for cid in contact_ids:
@@ -948,6 +950,8 @@ async def manage_contacts_batch(
         )
         return response
 
+    except UserInputError:
+        raise
     except HttpError as error:
         message = f"API error: {error}. You might need to re-authenticate. LLM: Try 'start_google_auth' with the user's email ({user_google_email}) and service_name='Google Contacts'."
         logger.error(message, exc_info=True)
@@ -992,7 +996,7 @@ async def manage_contact_group(
     """
     action = action.lower().strip()
     if action not in ("create", "update", "delete", "modify_members"):
-        raise Exception(
+        raise UserInputError(
             f"Invalid action '{action}'. Must be 'create', 'update', 'delete', or 'modify_members'."
         )
 
@@ -1003,7 +1007,7 @@ async def manage_contact_group(
     try:
         if action == "create":
             if not name:
-                raise Exception("name is required for 'create' action.")
+                raise UserInputError("name is required for 'create' action.")
 
             body = {"contactGroup": {"name": name}}
 
@@ -1025,7 +1029,7 @@ async def manage_contact_group(
 
         # All other actions require group_id
         if not group_id:
-            raise Exception(f"group_id is required for '{action}' action.")
+            raise UserInputError(f"group_id is required for '{action}' action.")
 
         # Normalize resource name
         if not group_id.startswith("contactGroups/"):
@@ -1035,7 +1039,7 @@ async def manage_contact_group(
 
         if action == "update":
             if not name:
-                raise Exception("name is required for 'update' action.")
+                raise UserInputError("name is required for 'update' action.")
 
             body = {"contactGroup": {"name": name}}
 
@@ -1076,7 +1080,7 @@ async def manage_contact_group(
 
         # action == "modify_members"
         if not add_contact_ids and not remove_contact_ids:
-            raise Exception(
+            raise UserInputError(
                 "At least one of add_contact_ids or remove_contact_ids must be provided."
             )
 
@@ -1128,6 +1132,8 @@ async def manage_contact_group(
         )
         return response
 
+    except UserInputError:
+        raise
     except HttpError as error:
         if error.resp.status == 404:
             message = f"Contact group not found: {group_id}"
@@ -1140,5 +1146,4 @@ async def manage_contact_group(
         message = f"Unexpected error: {e}."
         logger.exception(message)
         raise Exception(message)
-
 

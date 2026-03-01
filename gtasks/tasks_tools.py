@@ -15,7 +15,7 @@ from mcp import Resource
 from auth.oauth_config import is_oauth21_enabled, is_external_oauth21_provider
 from auth.service_decorator import require_google_service
 from core.server import server
-from core.utils import handle_http_errors
+from core.utils import UserInputError, handle_http_errors
 
 logger = logging.getLogger(__name__)
 
@@ -352,32 +352,32 @@ async def manage_task_list(
 
     valid_actions = ("create", "update", "delete", "clear_completed")
     if action not in valid_actions:
-        raise ValueError(
+        raise UserInputError(
             f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
         )
 
     if action == "create":
         if not title:
-            raise ValueError("'title' is required for the 'create' action.")
+            raise UserInputError("'title' is required for the 'create' action.")
         return await _create_task_list_impl(service, user_google_email, title)
 
     if action == "update":
         if not task_list_id:
-            raise ValueError("'task_list_id' is required for the 'update' action.")
+            raise UserInputError("'task_list_id' is required for the 'update' action.")
         if not title:
-            raise ValueError("'title' is required for the 'update' action.")
+            raise UserInputError("'title' is required for the 'update' action.")
         return await _update_task_list_impl(
             service, user_google_email, task_list_id, title
         )
 
     if action == "delete":
         if not task_list_id:
-            raise ValueError("'task_list_id' is required for the 'delete' action.")
+            raise UserInputError("'task_list_id' is required for the 'delete' action.")
         return await _delete_task_list_impl(service, user_google_email, task_list_id)
 
     # action == "clear_completed"
     if not task_list_id:
-        raise ValueError(
+        raise UserInputError(
             "'task_list_id' is required for the 'clear_completed' action."
         )
     return await _clear_completed_tasks_impl(service, user_google_email, task_list_id)
@@ -963,13 +963,13 @@ async def manage_task(
 
     valid_actions = ("create", "update", "delete", "move")
     if action not in valid_actions:
-        raise ValueError(
+        raise UserInputError(
             f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
         )
 
     if action == "create":
         if not title:
-            raise ValueError("'title' is required for the 'create' action.")
+            raise UserInputError("'title' is required for the 'create' action.")
         return await _create_task_impl(
             service,
             user_google_email,
@@ -983,7 +983,7 @@ async def manage_task(
 
     if action == "update":
         if not task_id:
-            raise ValueError("'task_id' is required for the 'update' action.")
+            raise UserInputError("'task_id' is required for the 'update' action.")
         return await _update_task_impl(
             service,
             user_google_email,
@@ -997,14 +997,14 @@ async def manage_task(
 
     if action == "delete":
         if not task_id:
-            raise ValueError("'task_id' is required for the 'delete' action.")
+            raise UserInputError("'task_id' is required for the 'delete' action.")
         return await _delete_task_impl(
             service, user_google_email, task_list_id, task_id
         )
 
     # action == "move"
     if not task_id:
-        raise ValueError("'task_id' is required for the 'move' action.")
+        raise UserInputError("'task_id' is required for the 'move' action.")
     return await _move_task_impl(
         service,
         user_google_email,
@@ -1017,7 +1017,6 @@ async def manage_task(
 
 
 # --- Legacy task tools (wrappers around _impl functions) ---
-
 
 
 

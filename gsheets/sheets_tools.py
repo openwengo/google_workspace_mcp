@@ -807,8 +807,12 @@ async def manage_conditional_formatting(
                 "rule_index must be a non-negative integer when provided."
             )
 
-        condition_values_list = _parse_condition_values(condition_values)
         gradient_points_list = _parse_gradient_points(gradient_points)
+        condition_values_list = (
+            None
+            if gradient_points_list
+            else _parse_condition_values(condition_values)
+        )
 
         sheets, sheet_titles = await _fetch_sheets_with_rules(
             service, spreadsheet_id
@@ -903,8 +907,12 @@ async def manage_conditional_formatting(
         if not isinstance(rule_index, int) or rule_index < 0:
             raise UserInputError("rule_index must be a non-negative integer.")
 
-        condition_values_list = _parse_condition_values(condition_values)
         gradient_points_list = _parse_gradient_points(gradient_points)
+        condition_values_list = (
+            None
+            if gradient_points_list is not None
+            else _parse_condition_values(condition_values)
+        )
 
         sheets, sheet_titles = await _fetch_sheets_with_rules(
             service, spreadsheet_id
