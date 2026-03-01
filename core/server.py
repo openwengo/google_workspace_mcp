@@ -57,15 +57,67 @@ def _wrap_well_known_endpoint(endpoint, etag: str):
     The wrapper overrides the header to ``no-store`` and adds an ``ETag``
     derived from the current scope set so intermediary caches that ignore
     ``no-store`` still see a fingerprint change.
+
+    Handles both regular request handlers (``async def handler(request)``)
+    and ASGI app endpoints (e.g. ``CORSMiddleware``) which expect
+    ``(scope, receive, send)`` instead.
     """
+    import functools
+    import inspect
 
-    async def _no_cache_endpoint(request: Request) -> Response:
-        response = await endpoint(request)
-        response.headers["Cache-Control"] = "no-store, must-revalidate"
-        response.headers["ETag"] = etag
-        return response
+    # Determine if endpoint is a regular handler function or an ASGI app.
+    # Starlette's Route uses the same check (see starlette/routing.py).
+    endpoint_handler = endpoint
+    while isinstance(endpoint_handler, functools.partial):
+        endpoint_handler = endpoint_handler.func
+    is_regular_handler = inspect.isfunction(endpoint_handler) or inspect.ismethod(
+        endpoint_handler
+    )
 
-    return _no_cache_endpoint
+    if is_regular_handler:
+
+        async def _no_cache_endpoint(request: Request) -> Response:
+            response = await endpoint(request)
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["ETag"] = etag
+            return response
+
+        return _no_cache_endpoint
+    else:
+        # ASGI app (e.g. CORSMiddleware wrapping a handler).
+        # Invoke via the ASGI interface and capture the response so we can
+        # override cache headers before returning.
+        async def _no_cache_asgi_endpoint(request: Request) -> Response:
+            status_code = 200
+            raw_headers: list[tuple[bytes, bytes]] = []
+            body_parts: list[bytes] = []
+
+            async def send(message):
+                nonlocal status_code, raw_headers
+                if message["type"] == "http.response.start":
+                    status_code = message["status"]
+                    raw_headers = list(message.get("headers", []))
+                elif message["type"] == "http.response.body":
+                    body_parts.append(message.get("body", b""))
+
+            await endpoint(request.scope, request._receive, send)
+
+            headers = {
+                (k.decode() if isinstance(k, bytes) else k): (
+                    v.decode() if isinstance(v, bytes) else v
+                )
+                for k, v in raw_headers
+            }
+            response = Response(
+                content=b"".join(body_parts),
+                status_code=status_code,
+                headers=headers,
+            )
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["ETag"] = etag
+            return response
+
+        return _no_cache_asgi_endpoint
 
 
 # Custom FastMCP that adds secure middleware stack for OAuth 2.1
