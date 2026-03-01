@@ -17,6 +17,9 @@ from gdocs.docs_helpers import (
     create_find_replace_request,
     create_insert_table_request,
     create_insert_page_break_request,
+    create_insert_doc_tab_request,
+    create_delete_doc_tab_request,
+    create_update_doc_tab_request,
     validate_operation,
 )
 
@@ -161,20 +164,26 @@ class BatchOperationManager:
         Returns:
             Tuple of (request, description)
         """
+        tab_id = op.get("tab_id")
+
         if op_type == "insert_text":
-            request = create_insert_text_request(op["index"], op["text"])
+            request = create_insert_text_request(op["index"], op["text"], tab_id)
             description = f"insert text at {op['index']}"
 
         elif op_type == "delete_text":
-            request = create_delete_range_request(op["start_index"], op["end_index"])
+            request = create_delete_range_request(
+                op["start_index"], op["end_index"], tab_id
+            )
             description = f"delete text {op['start_index']}-{op['end_index']}"
 
         elif op_type == "replace_text":
             # Replace is delete + insert (must be done in this order)
             delete_request = create_delete_range_request(
-                op["start_index"], op["end_index"]
+                op["start_index"], op["end_index"], tab_id
             )
-            insert_request = create_insert_text_request(op["start_index"], op["text"])
+            insert_request = create_insert_text_request(
+                op["start_index"], op["text"], tab_id
+            )
             # Return both requests as a list
             request = [delete_request, insert_request]
             description = f"replace text {op['start_index']}-{op['end_index']} with '{op['text'][:20]}{'...' if len(op['text']) > 20 else ''}'"
@@ -191,6 +200,7 @@ class BatchOperationManager:
                 op.get("text_color"),
                 op.get("background_color"),
                 op.get("link_url"),
+                tab_id,
             )
 
             if not request:
@@ -226,6 +236,7 @@ class BatchOperationManager:
                 op.get("indent_end"),
                 op.get("space_above"),
                 op.get("space_below"),
+                tab_id,
             )
 
             if not request:
@@ -269,19 +280,33 @@ class BatchOperationManager:
 
         elif op_type == "insert_table":
             request = create_insert_table_request(
-                op["index"], op["rows"], op["columns"]
+                op["index"], op["rows"], op["columns"], tab_id
             )
             description = f"insert {op['rows']}x{op['columns']} table at {op['index']}"
 
         elif op_type == "insert_page_break":
-            request = create_insert_page_break_request(op["index"])
+            request = create_insert_page_break_request(op["index"], tab_id)
             description = f"insert page break at {op['index']}"
 
         elif op_type == "find_replace":
             request = create_find_replace_request(
-                op["find_text"], op["replace_text"], op.get("match_case", False)
+                op["find_text"], op["replace_text"], op.get("match_case", False), tab_id
             )
             description = f"find/replace '{op['find_text']}' → '{op['replace_text']}'"
+
+        elif op_type == "insert_doc_tab":
+            request = create_insert_doc_tab_request(op["title"], op["index"], op.get("parent_tab_id"))
+            description = f"insert tab '{op['title']}' at {op['index']}"
+            if op.get("parent_tab_id"):
+                description += f" under parent tab {op['parent_tab_id']}"
+
+        elif op_type == "delete_doc_tab":
+            request = create_delete_doc_tab_request(op["tab_id"])
+            description = f"delete tab '{op['tab_id']}'"
+
+        elif op_type == "update_doc_tab":
+            request = create_update_doc_tab_request(op["tab_id"], op["title"])
+            description = f"rename tab '{op['tab_id']}' to '{op['title']}'"
 
         else:
             supported_types = [
@@ -402,6 +427,18 @@ class BatchOperationManager:
                     "required": ["find_text", "replace_text"],
                     "optional": ["match_case"],
                     "description": "Find and replace text throughout document",
+                },
+                "insert_doc_tab": {
+                    "required": ["title", "index"],
+                    "description": "Insert a new document tab with given title at specified index",
+                },
+                "delete_doc_tab": {
+                    "required": ["tab_id"],
+                    "description": "Delete a document tab by its ID",
+                },
+                "update_doc_tab": {
+                    "required": ["tab_id", "title"],
+                    "description": "Rename a document tab",
                 },
             },
             "example_operations": [
