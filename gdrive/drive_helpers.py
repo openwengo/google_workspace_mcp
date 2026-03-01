@@ -305,6 +305,7 @@ def resolve_file_type_mime(file_type: str) -> str:
         )
     return FILE_TYPE_MIME_MAP[lower]
 
+
 BASE_SHORTCUT_FIELDS = (
     "id, mimeType, parents, shortcutDetails(targetId, targetMimeType)"
 )
