@@ -193,22 +193,13 @@ async def get_task_list(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("create_task_list", service_type="tasks")  # type: ignore
-async def create_task_list(
+# --- Task list _impl functions ---
+
+
+async def _create_task_list_impl(
     service: Resource, user_google_email: str, title: str
 ) -> str:
-    """
-    Create a new task list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        title (str): The title of the new task list.
-
-    Returns:
-        str: Confirmation message with the new task list ID and details.
-    """
+    """Implementation for creating a new task list."""
     logger.info(
         f"[create_task_list] Invoked. Email: '{user_google_email}', Title: '{title}'"
     )
@@ -239,23 +230,10 @@ async def create_task_list(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("update_task_list", service_type="tasks")  # type: ignore
-async def update_task_list(
+async def _update_task_list_impl(
     service: Resource, user_google_email: str, task_list_id: str, title: str
 ) -> str:
-    """
-    Update an existing task list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to update.
-        title (str): The new title for the task list.
-
-    Returns:
-        str: Confirmation message with updated task list details.
-    """
+    """Implementation for updating an existing task list."""
     logger.info(
         f"[update_task_list] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, New Title: '{title}'"
     )
@@ -287,22 +265,10 @@ async def update_task_list(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("delete_task_list", service_type="tasks")  # type: ignore
-async def delete_task_list(
+async def _delete_task_list_impl(
     service: Resource, user_google_email: str, task_list_id: str
 ) -> str:
-    """
-    Delete a task list. Note: This will also delete all tasks in the list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to delete.
-
-    Returns:
-        str: Confirmation message.
-    """
+    """Implementation for deleting a task list."""
     logger.info(
         f"[delete_task_list] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}"
     )
@@ -325,6 +291,105 @@ async def delete_task_list(
         message = f"Unexpected error: {e}."
         logger.exception(message)
         raise Exception(message)
+
+
+async def _clear_completed_tasks_impl(
+    service: Resource, user_google_email: str, task_list_id: str
+) -> str:
+    """Implementation for clearing completed tasks from a task list."""
+    logger.info(
+        f"[clear_completed_tasks] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}"
+    )
+
+    try:
+        await asyncio.to_thread(service.tasks().clear(tasklist=task_list_id).execute)
+
+        response = f"All completed tasks have been cleared from task list {task_list_id} for {user_google_email}. The tasks are now hidden and won't appear in default task list views."
+
+        logger.info(
+            f"Cleared completed tasks from list {task_list_id} for {user_google_email}"
+        )
+        return response
+
+    except HttpError as error:
+        message = _format_reauth_message(error, user_google_email)
+        logger.error(message, exc_info=True)
+        raise Exception(message)
+    except Exception as e:
+        message = f"Unexpected error: {e}."
+        logger.exception(message)
+        raise Exception(message)
+
+
+# --- Consolidated manage_task_list tool ---
+
+
+@server.tool()  # type: ignore
+@require_google_service("tasks", "tasks")  # type: ignore
+@handle_http_errors("manage_task_list", service_type="tasks")  # type: ignore
+async def manage_task_list(
+    service: Resource,
+    user_google_email: str,
+    action: str,
+    task_list_id: Optional[str] = None,
+    title: Optional[str] = None,
+) -> str:
+    """
+    Manage task lists: create, update, delete, or clear completed tasks.
+
+    Args:
+        user_google_email (str): The user's Google email address. Required.
+        action (str): The action to perform. Must be one of: "create", "update", "delete", "clear_completed".
+        task_list_id (Optional[str]): The ID of the task list. Required for "update", "delete", and "clear_completed" actions.
+        title (Optional[str]): The title for the task list. Required for "create" and "update" actions.
+
+    Returns:
+        str: Result of the requested action.
+    """
+    logger.info(
+        f"[manage_task_list] Invoked. Email: '{user_google_email}', Action: '{action}'"
+    )
+
+    valid_actions = ("create", "update", "delete", "clear_completed")
+    if action not in valid_actions:
+        raise ValueError(
+            f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
+        )
+
+    if action == "create":
+        if not title:
+            raise ValueError("'title' is required for the 'create' action.")
+        return await _create_task_list_impl(service, user_google_email, title)
+
+    if action == "update":
+        if not task_list_id:
+            raise ValueError("'task_list_id' is required for the 'update' action.")
+        if not title:
+            raise ValueError("'title' is required for the 'update' action.")
+        return await _update_task_list_impl(
+            service, user_google_email, task_list_id, title
+        )
+
+    if action == "delete":
+        if not task_list_id:
+            raise ValueError("'task_list_id' is required for the 'delete' action.")
+        return await _delete_task_list_impl(service, user_google_email, task_list_id)
+
+    # action == "clear_completed"
+    if not task_list_id:
+        raise ValueError(
+            "'task_list_id' is required for the 'clear_completed' action."
+        )
+    return await _clear_completed_tasks_impl(service, user_google_email, task_list_id)
+
+
+# --- Legacy task list tools (wrappers around _impl functions) ---
+
+
+
+
+
+
 
 
 @server.tool()  # type: ignore
@@ -633,10 +698,10 @@ async def get_task(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("create_task", service_type="tasks")  # type: ignore
-async def create_task(
+# --- Task _impl functions ---
+
+
+async def _create_task_impl(
     service: Resource,
     user_google_email: str,
     task_list_id: str,
@@ -646,21 +711,7 @@ async def create_task(
     parent: Optional[str] = None,
     previous: Optional[str] = None,
 ) -> str:
-    """
-    Create a new task in a task list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to create the task in.
-        title (str): The title of the task.
-        notes (Optional[str]): Notes/description for the task.
-        due (Optional[str]): Due date in RFC 3339 format (e.g., "2024-12-31T23:59:59Z").
-        parent (Optional[str]): Parent task ID (for subtasks).
-        previous (Optional[str]): Previous sibling task ID (for positioning).
-
-    Returns:
-        str: Confirmation message with the new task ID and details.
-    """
+    """Implementation for creating a new task in a task list."""
     logger.info(
         f"[create_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Title: '{title}'"
     )
@@ -708,10 +759,7 @@ async def create_task(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("update_task", service_type="tasks")  # type: ignore
-async def update_task(
+async def _update_task_impl(
     service: Resource,
     user_google_email: str,
     task_list_id: str,
@@ -721,21 +769,7 @@ async def update_task(
     status: Optional[str] = None,
     due: Optional[str] = None,
 ) -> str:
-    """
-    Update an existing task.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list containing the task.
-        task_id (str): The ID of the task to update.
-        title (Optional[str]): New title for the task.
-        notes (Optional[str]): New notes/description for the task.
-        status (Optional[str]): New status ("needsAction" or "completed").
-        due (Optional[str]): New due date in RFC 3339 format.
-
-    Returns:
-        str: Confirmation message with updated task details.
-    """
+    """Implementation for updating an existing task."""
     logger.info(
         f"[update_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
@@ -796,23 +830,10 @@ async def update_task(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("delete_task", service_type="tasks")  # type: ignore
-async def delete_task(
+async def _delete_task_impl(
     service: Resource, user_google_email: str, task_list_id: str, task_id: str
 ) -> str:
-    """
-    Delete a task from a task list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list containing the task.
-        task_id (str): The ID of the task to delete.
-
-    Returns:
-        str: Confirmation message.
-    """
+    """Implementation for deleting a task from a task list."""
     logger.info(
         f"[delete_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
@@ -837,10 +858,7 @@ async def delete_task(
         raise Exception(message)
 
 
-@server.tool()  # type: ignore
-@require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("move_task", service_type="tasks")  # type: ignore
-async def move_task(
+async def _move_task_impl(
     service: Resource,
     user_google_email: str,
     task_list_id: str,
@@ -849,20 +867,7 @@ async def move_task(
     previous: Optional[str] = None,
     destination_task_list: Optional[str] = None,
 ) -> str:
-    """
-    Move a task to a different position or parent within the same list, or to a different list.
-
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the current task list containing the task.
-        task_id (str): The ID of the task to move.
-        parent (Optional[str]): New parent task ID (for making it a subtask).
-        previous (Optional[str]): Previous sibling task ID (for positioning).
-        destination_task_list (Optional[str]): Destination task list ID (for moving between lists).
-
-    Returns:
-        str: Confirmation message with updated task details.
-    """
+    """Implementation for moving a task to a different position, parent, or list."""
     logger.info(
         f"[move_task] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}, Task ID: {task_id}"
     )
@@ -913,41 +918,112 @@ async def move_task(
         raise Exception(message)
 
 
+# --- Consolidated manage_task tool ---
+
+
 @server.tool()  # type: ignore
 @require_google_service("tasks", "tasks")  # type: ignore
-@handle_http_errors("clear_completed_tasks", service_type="tasks")  # type: ignore
-async def clear_completed_tasks(
-    service: Resource, user_google_email: str, task_list_id: str
+@handle_http_errors("manage_task", service_type="tasks")  # type: ignore
+async def manage_task(
+    service: Resource,
+    user_google_email: str,
+    action: str,
+    task_list_id: str,
+    task_id: Optional[str] = None,
+    title: Optional[str] = None,
+    notes: Optional[str] = None,
+    status: Optional[str] = None,
+    due: Optional[str] = None,
+    parent: Optional[str] = None,
+    previous: Optional[str] = None,
+    destination_task_list: Optional[str] = None,
 ) -> str:
     """
-    Clear all completed tasks from a task list. The tasks will be marked as hidden.
+    Manage tasks: create, update, delete, or move tasks within task lists.
 
     Args:
         user_google_email (str): The user's Google email address. Required.
-        task_list_id (str): The ID of the task list to clear completed tasks from.
+        action (str): The action to perform. Must be one of: "create", "update", "delete", "move".
+        task_list_id (str): The ID of the task list. Required for all actions.
+        task_id (Optional[str]): The ID of the task. Required for "update", "delete", and "move" actions.
+        title (Optional[str]): The title of the task. Required for "create", optional for "update".
+        notes (Optional[str]): Notes/description for the task. Used by "create" and "update" actions.
+        status (Optional[str]): Task status ("needsAction" or "completed"). Used by "update" action.
+        due (Optional[str]): Due date in RFC 3339 format (e.g., "2024-12-31T23:59:59Z"). Used by "create" and "update" actions.
+        parent (Optional[str]): Parent task ID (for subtasks). Used by "create" and "move" actions.
+        previous (Optional[str]): Previous sibling task ID (for positioning). Used by "create" and "move" actions.
+        destination_task_list (Optional[str]): Destination task list ID (for moving between lists). Used by "move" action.
 
     Returns:
-        str: Confirmation message.
+        str: Result of the requested action.
     """
     logger.info(
-        f"[clear_completed_tasks] Invoked. Email: '{user_google_email}', Task List ID: {task_list_id}"
+        f"[manage_task] Invoked. Email: '{user_google_email}', Action: '{action}', Task List ID: {task_list_id}"
     )
 
-    try:
-        await asyncio.to_thread(service.tasks().clear(tasklist=task_list_id).execute)
-
-        response = f"All completed tasks have been cleared from task list {task_list_id} for {user_google_email}. The tasks are now hidden and won't appear in default task list views."
-
-        logger.info(
-            f"Cleared completed tasks from list {task_list_id} for {user_google_email}"
+    valid_actions = ("create", "update", "delete", "move")
+    if action not in valid_actions:
+        raise ValueError(
+            f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
         )
-        return response
 
-    except HttpError as error:
-        message = _format_reauth_message(error, user_google_email)
-        logger.error(message, exc_info=True)
-        raise Exception(message)
-    except Exception as e:
-        message = f"Unexpected error: {e}."
-        logger.exception(message)
-        raise Exception(message)
+    if action == "create":
+        if not title:
+            raise ValueError("'title' is required for the 'create' action.")
+        return await _create_task_impl(
+            service,
+            user_google_email,
+            task_list_id,
+            title,
+            notes=notes,
+            due=due,
+            parent=parent,
+            previous=previous,
+        )
+
+    if action == "update":
+        if not task_id:
+            raise ValueError("'task_id' is required for the 'update' action.")
+        return await _update_task_impl(
+            service,
+            user_google_email,
+            task_list_id,
+            task_id,
+            title=title,
+            notes=notes,
+            status=status,
+            due=due,
+        )
+
+    if action == "delete":
+        if not task_id:
+            raise ValueError("'task_id' is required for the 'delete' action.")
+        return await _delete_task_impl(
+            service, user_google_email, task_list_id, task_id
+        )
+
+    # action == "move"
+    if not task_id:
+        raise ValueError("'task_id' is required for the 'move' action.")
+    return await _move_task_impl(
+        service,
+        user_google_email,
+        task_list_id,
+        task_id,
+        parent=parent,
+        previous=previous,
+        destination_task_list=destination_task_list,
+    )
+
+
+# --- Legacy task tools (wrappers around _impl functions) ---
+
+
+
+
+
+
+
+
+
+

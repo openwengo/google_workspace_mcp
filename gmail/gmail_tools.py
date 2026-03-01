@@ -1822,88 +1822,68 @@ async def list_gmail_filters(service, user_google_email: str) -> str:
 
 
 @server.tool()
-@handle_http_errors("create_gmail_filter", service_type="gmail")
+@handle_http_errors("manage_gmail_filter", service_type="gmail")
 @require_google_service("gmail", "gmail_settings_basic")
-async def create_gmail_filter(
+async def manage_gmail_filter(
     service,
     user_google_email: str,
-    criteria: Annotated[
-        Dict[str, Any],
-        Field(
-            description="Filter criteria object as defined in the Gmail API.",
-        ),
-    ],
-    action: Annotated[
-        Dict[str, Any],
-        Field(
-            description="Filter action object as defined in the Gmail API.",
-        ),
-    ],
+    action: str,
+    criteria: Optional[Dict[str, Any]] = None,
+    filter_action: Optional[Dict[str, Any]] = None,
+    filter_id: Optional[str] = None,
 ) -> str:
     """
-    Creates a Gmail filter using the users.settings.filters API.
+    Manages Gmail filters. Supports creating and deleting filters.
 
     Args:
         user_google_email (str): The user's Google email address. Required.
-        criteria (Dict[str, Any]): Criteria for matching messages.
-        action (Dict[str, Any]): Actions to apply to matched messages.
+        action (str): Action to perform - "create" or "delete".
+        criteria (Optional[Dict[str, Any]]): Filter criteria object (required for create).
+        filter_action (Optional[Dict[str, Any]]): Filter action object (required for create). Named 'filter_action' to avoid shadowing the 'action' parameter.
+        filter_id (Optional[str]): ID of the filter to delete (required for delete).
 
     Returns:
-        str: Confirmation message with the created filter ID.
+        str: Confirmation message with filter details.
     """
-    logger.info("[create_gmail_filter] Invoked")
+    action_lower = action.lower().strip()
+    if action_lower == "create":
+        if not criteria or not filter_action:
+            raise ValueError("criteria and filter_action are required for create action")
+        logger.info("[manage_gmail_filter] Creating filter")
+        filter_body = {"criteria": criteria, "action": filter_action}
+        created_filter = await asyncio.to_thread(
+            service.users()
+            .settings()
+            .filters()
+            .create(userId="me", body=filter_body)
+            .execute
+        )
+        fid = created_filter.get("id", "(unknown)")
+        return f"Filter created successfully!\nFilter ID: {fid}"
+    elif action_lower == "delete":
+        if not filter_id:
+            raise ValueError("filter_id is required for delete action")
+        logger.info(f"[manage_gmail_filter] Deleting filter {filter_id}")
+        filter_details = await asyncio.to_thread(
+            service.users().settings().filters().get(userId="me", id=filter_id).execute
+        )
+        await asyncio.to_thread(
+            service.users().settings().filters().delete(userId="me", id=filter_id).execute
+        )
+        criteria_info = filter_details.get("criteria", {})
+        action_info = filter_details.get("action", {})
+        return (
+            "Filter deleted successfully!\n"
+            f"Filter ID: {filter_id}\n"
+            f"Criteria: {criteria_info or '(none)'}\n"
+            f"Action: {action_info or '(none)'}"
+        )
+    else:
+        raise ValueError(f"Invalid action '{action_lower}'. Must be 'create' or 'delete'.")
 
-    filter_body = {"criteria": criteria, "action": action}
-
-    created_filter = await asyncio.to_thread(
-        service.users()
-        .settings()
-        .filters()
-        .create(userId="me", body=filter_body)
-        .execute
-    )
-
-    filter_id = created_filter.get("id", "(unknown)")
-    return f"Filter created successfully!\nFilter ID: {filter_id}"
 
 
-@server.tool()
-@handle_http_errors("delete_gmail_filter", service_type="gmail")
-@require_google_service("gmail", "gmail_settings_basic")
-async def delete_gmail_filter(
-    service,
-    user_google_email: str,
-    filter_id: str = Field(..., description="ID of the filter to delete."),
-) -> str:
-    """
-    Deletes a Gmail filter by ID.
 
-    Args:
-        user_google_email (str): The user's Google email address. Required.
-        filter_id (str): The ID of the filter to delete.
-
-    Returns:
-        str: Confirmation message for the deletion.
-    """
-    logger.info(f"[delete_gmail_filter] Invoked. Filter ID: '{filter_id}'")
-
-    filter_details = await asyncio.to_thread(
-        service.users().settings().filters().get(userId="me", id=filter_id).execute
-    )
-
-    await asyncio.to_thread(
-        service.users().settings().filters().delete(userId="me", id=filter_id).execute
-    )
-
-    criteria = filter_details.get("criteria", {})
-    action = filter_details.get("action", {})
-
-    return (
-        "Filter deleted successfully!\n"
-        f"Filter ID: {filter_id}\n"
-        f"Criteria: {criteria or '(none)'}\n"
-        f"Action: {action or '(none)'}"
-    )
 
 
 @server.tool()

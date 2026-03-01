@@ -846,9 +846,7 @@ cp .env.oauth21 .env
 |------|------|-------------|
 | `list_calendars` | **Core** | List accessible calendars |
 | `get_events` | **Core** | Retrieve events with time range filtering |
-| `create_event` | **Core** | Create events with attachments & reminders |
-| `modify_event` | **Core** | Update existing events |
-| `delete_event` | Extended | Remove events |
+| `manage_event` | **Core** | Create, update, or delete calendar events |
 
 </td>
 <td width="50%" valign="top">
@@ -863,15 +861,11 @@ cp .env.oauth21 .env
 | `create_drive_file` | **Core** | Create files or fetch from URLs |
 | `create_drive_folder` | **Core** | Create empty folders in Drive or shared drives |
 | `import_to_google_doc` | **Core** | Import files (MD, DOCX, HTML, etc.) as Google Docs |
-| `share_drive_file` | **Core** | Share file with users/groups/domains/anyone |
 | `get_drive_shareable_link` | **Core** | Get shareable links for a file |
 | `list_drive_items` | Extended | List folder contents |
 | `copy_drive_file` | Extended | Copy existing files (templates) with optional renaming |
 | `update_drive_file` | Extended | Update file metadata, move between folders |
-| `batch_share_drive_file` | Extended | Share file with multiple recipients |
-| `update_drive_permission` | Extended | Modify permission role |
-| `remove_drive_permission` | Extended | Revoke file access |
-| `transfer_drive_ownership` | Extended | Transfer file ownership to another user |
+| `manage_drive_access` | Extended | Grant, update, revoke permissions, and transfer ownership |
 | `set_drive_file_permissions` | Extended | Set link sharing and file-level sharing settings |
 | `get_drive_file_permissions` | Complete | Get detailed file permissions |
 | `check_drive_file_public_access` | Complete | Check public sharing status |
@@ -894,7 +888,9 @@ cp .env.oauth21 .env
 | `get_gmail_thread_content` | Extended | Get full thread content |
 | `modify_gmail_message_labels` | Extended | Modify message labels |
 | `list_gmail_labels` | Extended | List available labels |
+| `list_gmail_filters` | Extended | List Gmail filters |
 | `manage_gmail_label` | Extended | Create/update/delete labels |
+| `manage_gmail_filter` | Extended | Create or delete Gmail filters |
 | `draft_gmail_message` | Extended | Create drafts |
 | `get_gmail_threads_content_batch` | Complete | Batch retrieve thread content |
 | `batch_modify_gmail_message_labels` | Complete | Batch modify labels |
@@ -965,7 +961,8 @@ Saved files expire after 1 hour and are cleaned up automatically.
 | `export_doc_to_pdf` | Extended | Export document to PDF |
 | `create_table_with_data` | Complete | Create data tables |
 | `debug_table_structure` | Complete | Debug table issues |
-| `*_document_comments` | Complete | Read, Reply, Create, Resolve |
+| `list_document_comments` | Complete | List all document comments |
+| `manage_document_comment` | Complete | Create, reply to, or resolve comments |
 
 </td>
 </tr>
@@ -984,7 +981,9 @@ Saved files expire after 1 hour and are cleaned up automatically.
 | `get_spreadsheet_info` | Extended | Get spreadsheet metadata |
 | `format_sheet_range` | Extended | Apply colors, number formats, text wrapping, alignment, bold/italic, font size |
 | `create_sheet` | Complete | Add sheets to existing files |
-| `*_sheet_comment` | Complete | Read/create/reply/resolve comments |
+| `list_spreadsheet_comments` | Complete | List all spreadsheet comments |
+| `manage_spreadsheet_comment` | Complete | Create, reply to, or resolve comments |
+| `manage_conditional_formatting` | Complete | Add, update, or delete conditional formatting rules |
 
 </td>
 <td width="50%" valign="top">
@@ -998,7 +997,8 @@ Saved files expire after 1 hour and are cleaned up automatically.
 | `batch_update_presentation` | Extended | Apply multiple updates |
 | `get_page` | Extended | Get specific slide information |
 | `get_page_thumbnail` | Extended | Generate slide thumbnails |
-| `*_presentation_comment` | Complete | Read/create/reply/resolve comments |
+| `list_presentation_comments` | Complete | List all presentation comments |
+| `manage_presentation_comment` | Complete | Create, reply to, or resolve comments |
 
 </td>
 </tr>
@@ -1025,12 +1025,10 @@ Saved files expire after 1 hour and are cleaned up automatically.
 |------|------|-------------|
 | `list_tasks` | **Core** | List tasks with filtering |
 | `get_task` | **Core** | Retrieve task details |
-| `create_task` | **Core** | Create tasks with hierarchy |
-| `update_task` | **Core** | Modify task properties |
-| `delete_task` | Extended | Remove tasks |
-| `move_task` | Complete | Reposition tasks |
-| `clear_completed_tasks` | Complete | Hide completed tasks |
-| `*_task_list` | Complete | List/get/create/update/delete task lists |
+| `manage_task` | **Core** | Create, update, delete, or move tasks |
+| `list_task_lists` | Complete | List task lists |
+| `get_task_list` | Complete | Get task list details |
+| `manage_task_list` | Complete | Create, update, delete task lists, or clear completed tasks |
 
 </td>
 </tr>
@@ -1044,14 +1042,11 @@ Saved files expire after 1 hour and are cleaned up automatically.
 | `search_contacts` | **Core** | Search contacts by name, email, phone |
 | `get_contact` | **Core** | Retrieve detailed contact info |
 | `list_contacts` | **Core** | List contacts with pagination |
-| `create_contact` | **Core** | Create new contacts |
-| `update_contact` | Extended | Update existing contacts |
-| `delete_contact` | Extended | Delete contacts |
+| `manage_contact` | **Core** | Create, update, or delete contacts |
 | `list_contact_groups` | Extended | List contact groups/labels |
 | `get_contact_group` | Extended | Get group details with members |
-| `batch_*_contacts` | Complete | Batch create/update/delete contacts |
-| `*_contact_group` | Complete | Create/update/delete contact groups |
-| `modify_contact_group_members` | Complete | Add/remove contacts from groups |
+| `manage_contacts_batch` | Complete | Batch create, update, or delete contacts |
+| `manage_contact_group` | Complete | Create, update, delete groups, or modify membership |
 
 </td>
 </tr>
@@ -1076,9 +1071,8 @@ Saved files expire after 1 hour and are cleaned up automatically.
 
 | Tool | Tier | Description |
 |------|------|-------------|
-| `search_custom` | **Core** | Perform web searches |
+| `search_custom` | **Core** | Perform web searches (supports site restrictions via sites parameter) |
 | `get_search_engine_info` | Complete | Retrieve search engine metadata |
-| `search_custom_siterestrict` | Extended | Search within specific domains |
 
 </td>
 </tr>
@@ -1095,10 +1089,8 @@ Saved files expire after 1 hour and are cleaned up automatically.
 | `create_script_project` | **Core** | Create new standalone or bound project |
 | `update_script_content` | **Core** | Update or create script files |
 | `run_script_function` | **Core** | Execute function with parameters |
-| `create_deployment` | Extended | Create new script deployment |
 | `list_deployments` | Extended | List all project deployments |
-| `update_deployment` | Extended | Update deployment configuration |
-| `delete_deployment` | Extended | Remove deployment |
+| `manage_deployment` | Extended | Create, update, or delete script deployments |
 | `list_script_processes` | Extended | View recent executions and status |
 
 </td>
@@ -1110,6 +1102,69 @@ Saved files expire after 1 hour and are cleaned up automatically.
 - <span style="color:#2d5b69">•</span> **Core**: Essential tools for basic functionality • Minimal API usage • Getting started
 - <span style="color:#72898f">•</span> **Extended**: Core tools + additional features • Regular usage • Expanded capabilities
 - <span style="color:#adbcbc">•</span> **Complete**: All available tools including advanced features • Power users • Full API access
+
+---
+
+### 🔄 Tool Consolidation & Migration
+
+**Tool Count Reduction**: This release consolidates 139 tools down to 111 tools (20% reduction) by combining CRUD operations into action-based `manage_*` tools.
+
+<details>
+<summary><b>Migration Mapping</b> <sub><sup>← Old tool → New tool mapping</sup></sub></summary>
+
+| Old Tool | New Tool | Action Parameter |
+|----------|----------|------------------|
+| `create_event` | `manage_event` | `action="create"` |
+| `modify_event` | `manage_event` | `action="update"` |
+| `delete_event` | `manage_event` | `action="delete"` |
+| `share_drive_file` | `manage_drive_access` | `action="grant"` |
+| `batch_share_drive_file` | `manage_drive_access` | `action="grant_batch"` |
+| `update_drive_permission` | `manage_drive_access` | `action="update"` |
+| `remove_drive_permission` | `manage_drive_access` | `action="revoke"` |
+| `transfer_drive_ownership` | `manage_drive_access` | `action="transfer_owner"` |
+| `create_gmail_filter` | `manage_gmail_filter` | `action="create"` |
+| `delete_gmail_filter` | `manage_gmail_filter` | `action="delete"` |
+| `create_task` | `manage_task` | `action="create"` |
+| `update_task` | `manage_task` | `action="update"` |
+| `delete_task` | `manage_task` | `action="delete"` |
+| `move_task` | `manage_task` | `action="move"` |
+| `create_task_list` | `manage_task_list` | `action="create"` |
+| `update_task_list` | `manage_task_list` | `action="update"` |
+| `delete_task_list` | `manage_task_list` | `action="delete"` |
+| `clear_completed_tasks` | `manage_task_list` | `action="clear_completed"` |
+| `create_contact` | `manage_contact` | `action="create"` |
+| `update_contact` | `manage_contact` | `action="update"` |
+| `delete_contact` | `manage_contact` | `action="delete"` |
+| `batch_create_contacts` | `manage_contacts_batch` | `action="create"` |
+| `batch_update_contacts` | `manage_contacts_batch` | `action="update"` |
+| `batch_delete_contacts` | `manage_contacts_batch` | `action="delete"` |
+| `create_contact_group` | `manage_contact_group` | `action="create"` |
+| `update_contact_group` | `manage_contact_group` | `action="update"` |
+| `delete_contact_group` | `manage_contact_group` | `action="delete"` |
+| `modify_contact_group_members` | `manage_contact_group` | `action="modify_members"` |
+| `create_deployment` | `manage_deployment` | `action="create"` |
+| `update_deployment` | `manage_deployment` | `action="update"` |
+| `delete_deployment` | `manage_deployment` | `action="delete"` |
+| `add_conditional_formatting` | `manage_conditional_formatting` | `action="add"` |
+| `update_conditional_formatting` | `manage_conditional_formatting` | `action="update"` |
+| `delete_conditional_formatting` | `manage_conditional_formatting` | `action="delete"` |
+| `read_document_comments` | `list_document_comments` | N/A (renamed) |
+| `create_document_comment` | `manage_document_comment` | `action="create"` |
+| `reply_to_document_comment` | `manage_document_comment` | `action="reply"` |
+| `resolve_document_comment` | `manage_document_comment` | `action="resolve"` |
+| `read_spreadsheet_comments` | `list_spreadsheet_comments` | N/A (renamed) |
+| `create_spreadsheet_comment` | `manage_spreadsheet_comment` | `action="create"` |
+| `reply_to_spreadsheet_comment` | `manage_spreadsheet_comment` | `action="reply"` |
+| `resolve_spreadsheet_comment` | `manage_spreadsheet_comment` | `action="resolve"` |
+| `read_presentation_comments` | `list_presentation_comments` | N/A (renamed) |
+| `create_presentation_comment` | `manage_presentation_comment` | `action="create"` |
+| `reply_to_presentation_comment` | `manage_presentation_comment` | `action="reply"` |
+| `resolve_presentation_comment` | `manage_presentation_comment` | `action="resolve"` |
+| `search_custom_siterestrict` | `search_custom` | Use `sites` parameter |
+
+**Breaking Change**: Legacy tools have been removed. Use the new consolidated tools with appropriate action parameters.
+
+</details>
 
 ---
 
