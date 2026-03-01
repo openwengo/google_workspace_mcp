@@ -53,9 +53,12 @@ class WellKnownCacheControlMiddleware:
             return
 
         path = scope.get("path", "")
-        is_oauth_well_known = path.startswith(
-            "/.well-known/oauth-authorization-server"
-        ) or path.startswith("/.well-known/oauth-protected-resource")
+        is_oauth_well_known = (
+            path == "/.well-known/oauth-authorization-server"
+            or path.startswith("/.well-known/oauth-authorization-server/")
+            or path == "/.well-known/oauth-protected-resource"
+            or path.startswith("/.well-known/oauth-protected-resource/")
+        )
         if not is_oauth_well_known:
             await self.app(scope, receive, send)
             return
