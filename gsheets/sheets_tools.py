@@ -809,9 +809,7 @@ async def manage_conditional_formatting(
 
         gradient_points_list = _parse_gradient_points(gradient_points)
         condition_values_list = (
-            None
-            if gradient_points_list
-            else _parse_condition_values(condition_values)
+            None if gradient_points_list else _parse_condition_values(condition_values)
         )
 
         sheets, sheet_titles = await _fetch_sheets_with_rules(service, spreadsheet_id)
