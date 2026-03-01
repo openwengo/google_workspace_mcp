@@ -64,11 +64,11 @@ A production-ready MCP server that integrates all major Google Workspace service
 <td width="50%" valign="top">
 
 **<span style="color:#72898f">@</span> Gmail** • **<span style="color:#72898f">≡</span> Drive** • **<span style="color:#72898f">⧖</span> Calendar** **<span style="color:#72898f">≡</span> Docs**
-- Complete Gmail management, end to end coverage
+- Complete Gmail management, end-to-end coverage
 - Full calendar management with advanced features
 - File operations with Office format support
 - Document creation, editing & comments
-- Deep, exhaustive support for fine grained editing
+- Deep, exhaustive support for fine-grained editing
 
 ---
 
