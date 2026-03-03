@@ -90,13 +90,20 @@ class BatchOperationManager:
                 "operation_summary": operation_descriptions[:5],  # First 5 operations
             }
 
-            summary = self._build_operation_summary(operation_descriptions)
+            # Extract new tab IDs from insert_doc_tab replies
+            created_tabs = self._extract_created_tabs(result)
+            if created_tabs:
+                metadata["created_tabs"] = created_tabs
 
-            return (
-                True,
-                f"Successfully executed {len(operations)} operations ({summary})",
-                metadata,
-            )
+            summary = self._build_operation_summary(operation_descriptions)
+            msg = f"Successfully executed {len(operations)} operations ({summary})"
+            if created_tabs:
+                tab_info = ", ".join(
+                    f"'{t['title']}' (tab_id: {t['tab_id']})" for t in created_tabs
+                )
+                msg += f". Created tabs: {tab_info}"
+
+            return True, msg, metadata
 
         except Exception as e:
             logger.error(f"Failed to execute batch operations: {str(e)}")
@@ -348,6 +355,26 @@ class BatchOperationManager:
             .batchUpdate(documentId=document_id, body={"requests": requests})
             .execute
         )
+
+    def _extract_created_tabs(self, result: dict[str, Any]) -> list[dict[str, str]]:
+        """
+        Extract tab IDs from insert_doc_tab replies in the batchUpdate response.
+
+        Args:
+            result: The batchUpdate API response
+
+        Returns:
+            List of dicts with tab_id and title for each created tab
+        """
+        created_tabs = []
+        for reply in result.get("replies", []):
+            if "createDocumentTab" in reply:
+                props = reply["createDocumentTab"].get("tabProperties", {})
+                tab_id = props.get("tabId")
+                title = props.get("title", "")
+                if tab_id:
+                    created_tabs.append({"tab_id": tab_id, "title": title})
+        return created_tabs
 
     def _build_operation_summary(self, operation_descriptions: list[str]) -> str:
         """

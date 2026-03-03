@@ -30,7 +30,7 @@ from gdocs.docs_helpers import (
     create_bullet_list_request,
     create_insert_doc_tab_request,
     create_update_doc_tab_request,
-    create_delete_doc_tab_request
+    create_delete_doc_tab_request,
 )
 
 # Import document structure and table utilities
@@ -584,7 +584,9 @@ async def find_and_replace_doc(
         f"[find_and_replace_doc] Doc={document_id}, find='{find_text}', replace='{replace_text}', tab='{tab_id}'"
     )
 
-    requests = [create_find_replace_request(find_text, replace_text, match_case, tab_id)]
+    requests = [
+        create_find_replace_request(find_text, replace_text, match_case, tab_id)
+    ]
 
     result = await asyncio.to_thread(
         service.documents()
@@ -1075,6 +1077,7 @@ async def inspect_doc_structure(
 
     # Always include available tabs if no tab_id was specified
     if not tab_id:
+
         def get_tabs_summary(tabs):
             summary = []
             for tab in tabs:
@@ -1107,6 +1110,7 @@ async def create_table_with_data(
     table_data: List[List[str]],
     index: int,
     bold_headers: bool = True,
+    tab_id: Optional[str] = None,
 ) -> str:
     """
     Creates a table and populates it with data in one reliable operation.
@@ -1145,6 +1149,7 @@ async def create_table_with_data(
         table_data: 2D list of strings - EXACT format: [["col1", "col2"], ["row1col1", "row1col2"]]
         index: Document position (MANDATORY: get from inspect_doc_structure 'total_length')
         bold_headers: Whether to make first row bold (default: true)
+        tab_id: Optional tab ID to create the table in a specific tab
 
     Returns:
         str: Confirmation with table details and link
@@ -1171,7 +1176,7 @@ async def create_table_with_data(
 
     # Try to create the table, and if it fails due to index being at document end, retry with index-1
     success, message, metadata = await table_manager.create_and_populate_table(
-        document_id, table_data, index, bold_headers
+        document_id, table_data, index, bold_headers, tab_id
     )
 
     # If it failed due to index being at or beyond document end, retry with adjusted index
@@ -1180,7 +1185,7 @@ async def create_table_with_data(
             f"Index {index} is at document boundary, retrying with index {index - 1}"
         )
         success, message, metadata = await table_manager.create_and_populate_table(
-            document_id, table_data, index - 1, bold_headers
+            document_id, table_data, index - 1, bold_headers, tab_id
         )
 
     if success:
@@ -1786,14 +1791,23 @@ async def insert_doc_tab(
     logger.info(f"[insert_doc_tab] Doc={document_id}, title='{title}', index={index}")
 
     request = create_insert_doc_tab_request(title, index, parent_tab_id)
-    await asyncio.to_thread(
+    result = await asyncio.to_thread(
         service.documents()
         .batchUpdate(documentId=document_id, body={"requests": [request]})
         .execute
     )
 
+    # Extract the new tab ID from the batchUpdate response
+    tab_id = None
+    if "replies" in result and result["replies"]:
+        reply = result["replies"][0]
+        if "createDocumentTab" in reply:
+            tab_id = reply["createDocumentTab"].get("tabProperties", {}).get("tabId")
+
     link = f"https://docs.google.com/document/d/{document_id}/edit"
     msg = f"Inserted tab '{title}' at index {index} in document {document_id}."
+    if tab_id:
+        msg += f" Tab ID: {tab_id}."
     if parent_tab_id:
         msg += f" Nested under parent tab {parent_tab_id}."
     return f"{msg} Link: {link}"
@@ -1854,7 +1868,9 @@ async def update_doc_tab(
     Returns:
         str: Confirmation message with document link
     """
-    logger.info(f"[update_doc_tab] Doc={document_id}, tab_id='{tab_id}', title='{title}'")
+    logger.info(
+        f"[update_doc_tab] Doc={document_id}, tab_id='{tab_id}', title='{title}'"
+    )
 
     request = create_update_doc_tab_request(tab_id, title)
     await asyncio.to_thread(
@@ -1864,7 +1880,9 @@ async def update_doc_tab(
     )
 
     link = f"https://docs.google.com/document/d/{document_id}/edit"
-    return f"Renamed tab '{tab_id}' to '{title}' in document {document_id}. Link: {link}"
+    return (
+        f"Renamed tab '{tab_id}' to '{title}' in document {document_id}. Link: {link}"
+    )
 
 
 # Create comment management tools for documents
