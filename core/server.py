@@ -96,9 +96,7 @@ class SecureFastMCP(FastMCP):
 
         # Rebuild middleware stack
         app.middleware_stack = app.build_middleware_stack()
-        logger.info(
-            "Added middleware stack: WellKnownCacheControl, Session Management"
-        )
+        logger.info("Added middleware stack: WellKnownCacheControl, Session Management")
         return app
 
 
