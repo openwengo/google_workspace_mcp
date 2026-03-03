@@ -295,7 +295,9 @@ class BatchOperationManager:
             description = f"find/replace '{op['find_text']}' → '{op['replace_text']}'"
 
         elif op_type == "insert_doc_tab":
-            request = create_insert_doc_tab_request(op["title"], op["index"], op.get("parent_tab_id"))
+            request = create_insert_doc_tab_request(
+                op["title"], op["index"], op.get("parent_tab_id")
+            )
             description = f"insert tab '{op['title']}' at {op['index']}"
             if op.get("parent_tab_id"):
                 description += f" under parent tab {op['parent_tab_id']}"
@@ -318,6 +320,9 @@ class BatchOperationManager:
                 "insert_table",
                 "insert_page_break",
                 "find_replace",
+                "insert_doc_tab",
+                "delete_doc_tab",
+                "update_doc_tab",
             ]
             raise ValueError(
                 f"Unsupported operation type '{op_type}'. Supported: {', '.join(supported_types)}"

@@ -369,7 +369,10 @@ def create_update_paragraph_style_request(
 
 
 def create_find_replace_request(
-    find_text: str, replace_text: str, match_case: bool = False, tab_id: Optional[str] = None
+    find_text: str,
+    replace_text: str,
+    match_case: bool = False,
+    tab_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a replaceAllText request for Google Docs API.
@@ -434,7 +437,9 @@ def create_insert_page_break_request(
     return {"insertPageBreak": {"location": location}}
 
 
-def create_insert_doc_tab_request(title: str, index: int, parent_tab_id: Optional[str] = None) -> Dict[str, Any]:
+def create_insert_doc_tab_request(
+    title: str, index: int, parent_tab_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Create an addDocumentTab request for Google Docs API.
 
@@ -556,7 +561,7 @@ def create_bullet_list_request(
         nesting_level: Nesting level (0-8, where 0 is top level). If None or 0, no tabs added.
         paragraph_start_indices: Optional paragraph start positions for ranges with
             multiple paragraphs. If omitted, only start_index is tab-prefixed.
-        tab_id: Optional ID of the tab to target
+        doc_tab_id: Optional ID of the tab to target
 
     Returns:
         List of request dictionaries (insertText for nesting tabs if needed,
@@ -593,7 +598,9 @@ def create_bullet_list_request(
 
         for paragraph_start in paragraph_starts:
             adjusted_start = paragraph_start + inserted_char_count
-            requests.append(create_insert_text_request(adjusted_start, tabs, doc_tab_id))
+            requests.append(
+                create_insert_text_request(adjusted_start, tabs, doc_tab_id)
+            )
             inserted_char_count += nesting_level
 
         # Keep createParagraphBullets range aligned to the same logical content.
