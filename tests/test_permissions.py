@@ -14,7 +14,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from auth.permissions import (
     get_scopes_for_permission,
+    is_action_denied,
     parse_permissions_arg,
+    set_permissions,
+    SERVICE_DENIED_ACTIONS,
     SERVICE_PERMISSION_LEVELS,
 )
 from auth.scopes import (
@@ -24,6 +27,8 @@ from auth.scopes import (
     GMAIL_COMPOSE_SCOPE,
     DRIVE_READONLY_SCOPE,
     DRIVE_SCOPE,
+    TASKS_READONLY_SCOPE,
+    TASKS_SCOPE,
     DRIVE_FILE_SCOPE,
 )
 
@@ -116,3 +121,52 @@ class TestGetScopesForPermission:
                 assert len(scopes) == len(set(scopes)), (
                     f"Duplicate scopes for {service}:{level_name}"
                 )
+
+    def test_tasks_manage_includes_write_scope(self):
+        scopes = get_scopes_for_permission("tasks", "manage")
+        assert TASKS_SCOPE in scopes
+        assert TASKS_READONLY_SCOPE in scopes
+
+    def test_tasks_full_includes_write_scope(self):
+        scopes = get_scopes_for_permission("tasks", "full")
+        assert TASKS_SCOPE in scopes
+
+    def test_tasks_manage_is_valid_level(self):
+        result = parse_permissions_arg(["tasks:manage"])
+        assert result == {"tasks": "manage"}
+
+
+class TestIsActionDenied:
+    """Tests for is_action_denied() and SERVICE_DENIED_ACTIONS."""
+
+    def test_no_permissions_mode_allows_all(self):
+        set_permissions(None)
+        assert is_action_denied("tasks", "delete") is False
+
+    def test_tasks_full_allows_delete(self):
+        set_permissions({"tasks": "full"})
+        assert is_action_denied("tasks", "delete") is False
+
+    def test_tasks_manage_denies_delete(self):
+        set_permissions({"tasks": "manage"})
+        assert is_action_denied("tasks", "delete") is True
+
+    def test_tasks_manage_allows_create(self):
+        set_permissions({"tasks": "manage"})
+        assert is_action_denied("tasks", "create") is False
+
+    def test_tasks_manage_allows_update(self):
+        set_permissions({"tasks": "manage"})
+        assert is_action_denied("tasks", "update") is False
+
+    def test_tasks_manage_allows_move(self):
+        set_permissions({"tasks": "manage"})
+        assert is_action_denied("tasks", "move") is False
+
+    def test_service_not_in_permissions_allows_all(self):
+        set_permissions({"gmail": "readonly"})
+        assert is_action_denied("tasks", "delete") is False
+
+    def test_service_without_denied_actions_allows_all(self):
+        set_permissions({"gmail": "readonly"})
+        assert is_action_denied("gmail", "delete") is False
