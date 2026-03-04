@@ -129,9 +129,10 @@ class TestGetScopesForPermission:
         assert TASKS_READONLY_SCOPE in scopes
 
     def test_tasks_full_includes_write_scope(self):
-        """Full level should include write scope from manage."""
+        """Full level should include write and readonly scopes from lower levels."""
         scopes = get_scopes_for_permission("tasks", "full")
         assert TASKS_SCOPE in scopes
+        assert TASKS_READONLY_SCOPE in scopes
 
     def test_tasks_manage_is_valid_level(self):
         """tasks:manage should be accepted by parse_permissions_arg."""
