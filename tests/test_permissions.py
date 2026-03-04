@@ -73,6 +73,11 @@ class TestParsePermissionsArg:
         with pytest.raises(ValueError, match="Unknown level"):
             parse_permissions_arg(["gmail:read:only"])
 
+    def test_tasks_manage_is_valid_level(self):
+        """tasks:manage should be accepted by parse_permissions_arg."""
+        result = parse_permissions_arg(["tasks:manage"])
+        assert result == {"tasks": "manage"}
+
 
 class TestGetScopesForPermission:
     """Tests for get_scopes_for_permission() cumulative scope expansion."""
@@ -134,10 +139,6 @@ class TestGetScopesForPermission:
         assert TASKS_SCOPE in scopes
         assert TASKS_READONLY_SCOPE in scopes
 
-    def test_tasks_manage_is_valid_level(self):
-        """tasks:manage should be accepted by parse_permissions_arg."""
-        result = parse_permissions_arg(["tasks:manage"])
-        assert result == {"tasks": "manage"}
 
 
 @pytest.fixture(autouse=True)
