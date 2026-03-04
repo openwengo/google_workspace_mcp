@@ -163,6 +163,14 @@ class TestIsActionDenied:
         set_permissions({"tasks": "manage"})
         assert is_action_denied("tasks", "move") is False
 
+    def test_tasks_manage_denies_clear_completed(self):
+        set_permissions({"tasks": "manage"})
+        assert is_action_denied("tasks", "clear_completed") is True
+
+    def test_tasks_full_allows_clear_completed(self):
+        set_permissions({"tasks": "full"})
+        assert is_action_denied("tasks", "clear_completed") is False
+
     def test_service_not_in_permissions_allows_all(self):
         set_permissions({"gmail": "readonly"})
         assert is_action_denied("tasks", "delete") is False

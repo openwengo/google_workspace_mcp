@@ -138,7 +138,7 @@ SERVICE_PERMISSION_LEVELS: Dict[str, List[Tuple[str, List[str]]]] = {
 # Levels not listed here (or services without entries) deny nothing.
 SERVICE_DENIED_ACTIONS: Dict[str, Dict[str, FrozenSet[str]]] = {
     "tasks": {
-        "manage": frozenset({"delete"}),
+        "manage": frozenset({"delete", "clear_completed"}),
     },
 }
 
