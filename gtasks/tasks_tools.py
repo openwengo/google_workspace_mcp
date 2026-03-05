@@ -13,6 +13,7 @@ from googleapiclient.errors import HttpError  # type: ignore
 from mcp import Resource
 
 from auth.oauth_config import is_oauth21_enabled, is_external_oauth21_provider
+from auth.permissions import is_action_denied
 from auth.service_decorator import require_google_service
 from core.server import server
 from core.utils import UserInputError, handle_http_errors
@@ -318,6 +319,11 @@ async def manage_task_list(
     if action not in valid_actions:
         raise UserInputError(
             f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
+        )
+
+    if is_action_denied("tasks", action):
+        raise UserInputError(
+            f"The '{action}' action is not allowed under the current permission level."
         )
 
     if action == "create":
@@ -885,6 +891,11 @@ async def manage_task(
     if action not in valid_actions:
         raise UserInputError(
             f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
+        )
+
+    if is_action_denied("tasks", action):
+        raise UserInputError(
+            f"The '{action}' action is not allowed under the current permission level."
         )
 
     if action == "create":
