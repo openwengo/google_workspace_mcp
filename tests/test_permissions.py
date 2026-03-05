@@ -17,7 +17,6 @@ from auth.permissions import (
     is_action_denied,
     parse_permissions_arg,
     set_permissions,
-    SERVICE_DENIED_ACTIONS,
     SERVICE_PERMISSION_LEVELS,
 )
 from auth.scopes import (
@@ -138,7 +137,6 @@ class TestGetScopesForPermission:
         scopes = get_scopes_for_permission("tasks", "full")
         assert TASKS_SCOPE in scopes
         assert TASKS_READONLY_SCOPE in scopes
-
 
 
 @pytest.fixture(autouse=True)

@@ -568,7 +568,7 @@ uv run main.py --permissions gmail:send drive:full --tool-tier core
 Granular permissions mode provides service-by-service scope control:
 - Format: `service:level` (one entry per service)
 - Gmail levels: `readonly`, `organize`, `drafts`, `send`, `full` (cumulative)
-- Tasks levels: `readonly`, `manage`, `full` (cumulative; `manage` allows create/update/move but denies delete)
+- Tasks levels: `readonly`, `manage`, `full` (cumulative; `manage` allows create/update/move but denies `delete` and `clear_completed`)
 - Other services currently support: `readonly`, `full`
 - `--permissions` and `--read-only` are mutually exclusive
 - `--permissions` cannot be combined with `--tools`; enabled services are determined by the `--permissions` entries (optionally filtered by `--tool-tier`)
