@@ -276,9 +276,7 @@ def test_serialize_form_item_grid_includes_row_and_column_structure():
                     "rowQuestion": {"title": "Dishes"},
                 },
             ],
-            "grid": {
-                "columns": {"options": [{"value": "Never"}, {"value": "Often"}]}
-            },
+            "grid": {"columns": {"options": [{"value": "Never"}, {"value": "Often"}]}},
         },
     }
 

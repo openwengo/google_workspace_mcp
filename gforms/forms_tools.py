@@ -192,7 +192,9 @@ async def get_form(service, user_google_email: str, form_id: str) -> str:
     )
 
     items = form.get("items", [])
-    serialized_items = [_serialize_form_item(item, i) for i, item in enumerate(items, 1)]
+    serialized_items = [
+        _serialize_form_item(item, i) for i, item in enumerate(items, 1)
+    ]
 
     questions_summary = []
     for serialized_item in serialized_items:
@@ -204,12 +206,10 @@ async def get_form(service, user_google_email: str, form_id: str) -> str:
             f"  {item_index}. {item_title} [{item_type}]{required_text}"
         )
 
-    questions_text = "\n".join(questions_summary) if questions_summary else "  No questions found"
-    items_text = (
-        json.dumps(serialized_items, indent=2)
-        if serialized_items
-        else "[]"
+    questions_text = (
+        "\n".join(questions_summary) if questions_summary else "  No questions found"
     )
+    items_text = json.dumps(serialized_items, indent=2) if serialized_items else "[]"
 
     result = f"""Form Details for {user_google_email}:
 - Title: "{title}"
