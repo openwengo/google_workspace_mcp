@@ -15,6 +15,9 @@ COPY . .
 # Install Python dependencies using uv sync
 RUN uv sync --frozen --no-dev
 
+# Ensure OAuth proxy disk backend dependencies are present in the image.
+RUN uv pip install --python .venv/bin/python "py-key-value-aio[disk]>=0.3.0"
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
