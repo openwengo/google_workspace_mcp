@@ -14,7 +14,7 @@ Other services: readonly, full (extensible by adding entries to SERVICE_PERMISSI
 """
 
 import logging
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from auth.scopes import (
     GMAIL_READONLY_SCOPE,
