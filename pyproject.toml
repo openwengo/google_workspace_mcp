@@ -58,6 +58,9 @@ Changelog = "https://github.com/taylorwilsdon/google_workspace_mcp/releases"
 workspace-mcp = "main:main"
 
 [project.optional-dependencies]
+disk = [
+    "py-key-value-aio[disk]>=0.3.0",
+]
 valkey = [
     "py-key-value-aio[valkey]>=0.3.0",
 ]
@@ -80,6 +83,9 @@ dev = [
 ]
 
 [dependency-groups]
+disk = [
+    "py-key-value-aio[disk]>=0.3.0",
+]
 valkey = [
     "py-key-value-aio[valkey]>=0.3.0",
 ]
