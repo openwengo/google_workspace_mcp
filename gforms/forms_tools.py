@@ -17,14 +17,14 @@ from core.utils import handle_http_errors
 logger = logging.getLogger(__name__)
 
 
-def _extract_option_values(options: List[Dict[str, Any]]) -> List[str]:
-    """Extract non-empty option values from Forms choice option objects."""
-    values: List[str] = []
-    for option in options:
-        value = option.get("value")
-        if value:
-            values.append(value)
-    return values
+def _extract_option_values(options: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Extract valid option objects from Forms choice option objects.
+
+    Returns the full option dicts (preserving fields like ``isOther``,
+    ``image``, ``goToAction``, and ``goToSectionId``) while filtering
+    out entries that lack a truthy ``value``.
+    """
+    return [option for option in options if option.get("value")]
 
 
 def _get_question_type(question: Dict[str, Any]) -> str:
@@ -196,18 +196,18 @@ async def get_form(service, user_google_email: str, form_id: str) -> str:
         _serialize_form_item(item, i) for i, item in enumerate(items, 1)
     ]
 
-    questions_summary = []
+    items_summary = []
     for serialized_item in serialized_items:
         item_index = serialized_item["index"]
-        item_title = serialized_item.get("title", f"Question {item_index}")
+        item_title = serialized_item.get("title", f"Item {item_index}")
         item_type = serialized_item.get("type", "UNKNOWN")
         required_text = " (Required)" if serialized_item.get("required") else ""
-        questions_summary.append(
+        items_summary.append(
             f"  {item_index}. {item_title} [{item_type}]{required_text}"
         )
 
-    questions_text = (
-        "\n".join(questions_summary) if questions_summary else "  No questions found"
+    items_summary_text = (
+        "\n".join(items_summary) if items_summary else "  No items found"
     )
     items_text = json.dumps(serialized_items, indent=2) if serialized_items else "[]"
 
@@ -218,8 +218,8 @@ async def get_form(service, user_google_email: str, form_id: str) -> str:
 - Form ID: {form_id}
 - Edit URL: {edit_url}
 - Responder URL: {responder_url}
-- Questions ({len(items)} total):
-{questions_text}
+- Items ({len(items)} total):
+{items_summary_text}
 - Items (structured):
 {items_text}"""
 

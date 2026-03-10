@@ -255,7 +255,7 @@ def test_serialize_form_item_choice_question_includes_ids_and_options():
     assert serialized["type"] == "RADIO"
     assert serialized["questionId"] == "q_123"
     assert serialized["required"] is True
-    assert serialized["options"] == ["Red", "Blue"]
+    assert serialized["options"] == [{"value": "Red"}, {"value": "Blue"}]
 
 
 def test_serialize_form_item_grid_includes_row_and_column_structure():
@@ -284,7 +284,7 @@ def test_serialize_form_item_grid_includes_row_and_column_structure():
 
     assert serialized["index"] == 2
     assert serialized["type"] == "GRID"
-    assert serialized["grid"]["columns"] == ["Never", "Often"]
+    assert serialized["grid"]["columns"] == [{"value": "Never"}, {"value": "Often"}]
     assert serialized["grid"]["rows"] == [
         {"title": "Laundry", "questionId": "row_q1", "required": True},
         {"title": "Dishes", "questionId": "row_q2", "required": False},
