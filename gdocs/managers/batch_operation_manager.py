@@ -244,6 +244,7 @@ class BatchOperationManager:
                 op.get("space_above"),
                 op.get("space_below"),
                 tab_id,
+                op.get("named_style_type"),
             )
 
             if not request:

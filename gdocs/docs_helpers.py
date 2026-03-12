@@ -113,6 +113,7 @@ def build_paragraph_style(
     indent_end: float = None,
     space_above: float = None,
     space_below: float = None,
+    named_style_type: str = None,
 ) -> tuple[Dict[str, Any], list[str]]:
     """
     Build paragraph style object for Google Docs API requests.
@@ -126,6 +127,8 @@ def build_paragraph_style(
         indent_end: Right/end indent in points
         space_above: Space above paragraph in points
         space_below: Space below paragraph in points
+        named_style_type: Direct named style (TITLE, SUBTITLE, HEADING_1..6, NORMAL_TEXT).
+                          Takes precedence over heading_level when both are provided.
 
     Returns:
         Tuple of (paragraph_style_dict, list_of_field_names)
@@ -133,7 +136,20 @@ def build_paragraph_style(
     paragraph_style = {}
     fields = []
 
-    if heading_level is not None:
+    if named_style_type is not None:
+        valid_styles = [
+            "NORMAL_TEXT", "TITLE", "SUBTITLE",
+            "HEADING_1", "HEADING_2", "HEADING_3",
+            "HEADING_4", "HEADING_5", "HEADING_6",
+        ]
+        if named_style_type not in valid_styles:
+            raise ValueError(
+                f"Invalid named_style_type '{named_style_type}'. "
+                f"Must be one of: {', '.join(valid_styles)}"
+            )
+        paragraph_style["namedStyleType"] = named_style_type
+        fields.append("namedStyleType")
+    elif heading_level is not None:
         if heading_level < 0 or heading_level > 6:
             raise ValueError("heading_level must be between 0 (normal text) and 6")
         if heading_level == 0:
@@ -321,6 +337,7 @@ def create_update_paragraph_style_request(
     space_above: float = None,
     space_below: float = None,
     tab_id: Optional[str] = None,
+    named_style_type: str = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Create an updateParagraphStyle request for Google Docs API.
@@ -337,6 +354,7 @@ def create_update_paragraph_style_request(
         space_above: Space above paragraph in points
         space_below: Space below paragraph in points
         tab_id: Optional ID of the tab to target
+        named_style_type: Direct named style (TITLE, SUBTITLE, HEADING_1..6, NORMAL_TEXT)
 
     Returns:
         Dictionary representing the updateParagraphStyle request, or None if no styles provided
@@ -350,6 +368,7 @@ def create_update_paragraph_style_request(
         indent_end,
         space_above,
         space_below,
+        named_style_type,
     )
 
     if not paragraph_style:
