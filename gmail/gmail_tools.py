@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 GMAIL_BATCH_SIZE = 25
 GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
-GMAIL_METADATA_HEADERS = ["Subject", "From", "To", "Cc", "Message-ID", "Date"]
+
+GMAIL_METADATA_HEADERS = [
+    "Subject", "From", "To", "Cc",
+    "Message-ID", "In-Reply-To", "References",
+    "Date"
+]
 LOW_VALUE_TEXT_PLACEHOLDERS = (
     "your client does not support html",
     "view this email in your browser",
@@ -73,6 +78,8 @@ class _HTMLTextExtractor(HTMLParser):
 
     def get_text(self) -> str:
         return " ".join("".join(self._text).split())
+
+
 
 
 def _html_to_text(html: str) -> str:
@@ -1155,7 +1162,7 @@ async def send_gmail_message(
     in_reply_to: Annotated[
         Optional[str],
         Field(
-            description="Optional Message-ID of the message being replied to.",
+            description="Optional RFC Message-ID of the message being replied to (e.g., '<message123@gmail.com>').",
         ),
     ] = None,
     references: Annotated[
@@ -1197,8 +1204,8 @@ async def send_gmail_message(
             the email will be sent from the authenticated user's primary email address.
         user_google_email (str): The user's Google email address. Required for authentication.
         thread_id (Optional[str]): Optional Gmail thread ID to reply within. When provided, sends a reply.
-        in_reply_to (Optional[str]): Optional Message-ID of the message being replied to. Used for proper threading.
-        references (Optional[str]): Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs.
+        in_reply_to (Optional[str]): Optional RFC Message-ID of the message being replied to (e.g., '<message123@gmail.com>').
+        references (Optional[str]): Optional chain of RFC Message-IDs for proper threading (e.g., '<msg1@gmail.com> <msg2@gmail.com>').
 
     Returns:
         str: Confirmation message with the sent email's message ID.
@@ -1362,7 +1369,7 @@ async def draft_gmail_message(
     in_reply_to: Annotated[
         Optional[str],
         Field(
-            description="Optional Message-ID of the message being replied to.",
+            description="Optional RFC Message-ID of the message being replied to (e.g., '<message123@gmail.com>').",
         ),
     ] = None,
     references: Annotated[
@@ -1401,8 +1408,8 @@ async def draft_gmail_message(
             configured in Gmail settings (Settings > Accounts > Send mail as). If not provided,
             the draft will be from the authenticated user's primary email address.
         thread_id (Optional[str]): Optional Gmail thread ID to reply within. When provided, creates a reply draft.
-        in_reply_to (Optional[str]): Optional Message-ID of the message being replied to. Used for proper threading.
-        references (Optional[str]): Optional chain of Message-IDs for proper threading. Should include all previous Message-IDs.
+        in_reply_to (Optional[str]): Optional RFC Message-ID of the message being replied to (e.g., '<message123@gmail.com>').
+        references (Optional[str]): Optional chain of RFC Message-IDs for proper threading (e.g., '<msg1@gmail.com> <msg2@gmail.com>').
         attachments (List[Dict[str, str]]): Optional list of attachments. Each dict can contain:
             Option 1 - File path (auto-encodes):
               - 'path' (required): File path to attach
