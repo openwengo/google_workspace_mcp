@@ -196,10 +196,10 @@ def create_success_response(verified_user_id: Optional[str] = None) -> HTMLRespo
             You've been authenticated as <span class="user-id">{user_display}</span>
         </div>
         <div class="message">
-            Your credentials have been securely saved. You can now close this window and retry your original command.
+            Your credentials have been securely saved. You can now close this tab and retry your original command.
         </div>
-        <button class="button" onclick="tryClose()">Close Window</button>
-        <div class="auto-close">This window will close automatically in 10 seconds</div>
+        <button class="button" onclick="tryClose()">Close Tab</button>
+        <div class="auto-close">This tab will close automatically in 10 seconds</div>
     </div>
 </body>
 </html>"""
