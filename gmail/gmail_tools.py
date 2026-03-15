@@ -721,6 +721,13 @@ async def get_gmail_message_content(
     if rfc822_msg_id:
         content_lines.append(f"Message-ID: {rfc822_msg_id}")
 
+    in_reply_to = headers.get("In-Reply-To", "")
+    references = headers.get("References", "")
+    if in_reply_to:
+        content_lines.append(f"In-Reply-To: {in_reply_to}")
+    if references:
+        content_lines.append(f"References: {references}")
+
     if to:
         content_lines.append(f"To:      {to}")
     if cc:
@@ -886,12 +893,19 @@ async def get_gmail_messages_content_batch(
                     cc = headers.get("Cc", "")
                     rfc822_msg_id = headers.get("Message-ID", "")
 
+                    in_reply_to = headers.get("In-Reply-To", "")
+                    references = headers.get("References", "")
+
                     msg_output = (
                         f"Message ID: {mid}\nSubject: {subject}\nFrom: {sender}\n"
                         f"Date: {headers.get('Date', '(unknown date)')}\n"
                     )
                     if rfc822_msg_id:
                         msg_output += f"Message-ID: {rfc822_msg_id}\n"
+                    if in_reply_to:
+                        msg_output += f"In-Reply-To: {in_reply_to}\n"
+                    if references:
+                        msg_output += f"References: {references}\n"
 
                     if to:
                         msg_output += f"To: {to}\n"
@@ -917,12 +931,19 @@ async def get_gmail_messages_content_batch(
                     # Format body content with HTML fallback
                     body_data = _format_body_content(text_body, html_body)
 
+                    in_reply_to = headers.get("In-Reply-To", "")
+                    references = headers.get("References", "")
+
                     msg_output = (
                         f"Message ID: {mid}\nSubject: {subject}\nFrom: {sender}\n"
                         f"Date: {headers.get('Date', '(unknown date)')}\n"
                     )
                     if rfc822_msg_id:
                         msg_output += f"Message-ID: {rfc822_msg_id}\n"
+                    if in_reply_to:
+                        msg_output += f"In-Reply-To: {in_reply_to}\n"
+                    if references:
+                        msg_output += f"References: {references}\n"
 
                     if to:
                         msg_output += f"To: {to}\n"
