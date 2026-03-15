@@ -991,9 +991,7 @@ async def _fetch_grid_metadata(
         )
         return "", ""
 
-    cell_count = _a1_range_cell_count(tight_range) or sum(
-        len(row) for row in values
-    )
+    cell_count = _a1_range_cell_count(tight_range) or sum(len(row) for row in values)
     if cell_count > MAX_GRID_METADATA_CELLS:
         logger.info(
             "[read_sheet_values] Skipping grid metadata fetch for large range "
