@@ -772,9 +772,9 @@ def get_credentials(
         logger.debug(
             f"[get_credentials] Credentials are valid. User: '{user_google_email}', Session: '{session_id}'"
         )
-    elif credentials.expired and credentials.refresh_token:
+    elif credentials.refresh_token:
         logger.info(
-            f"[get_credentials] Credentials expired. Attempting refresh. User: '{user_google_email}', Session: '{session_id}'"
+            f"[get_credentials] Credentials not valid. Attempting refresh. User: '{user_google_email}', Session: '{session_id}'"
         )
         try:
             logger.debug(
