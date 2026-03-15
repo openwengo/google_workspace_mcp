@@ -641,8 +641,8 @@ def get_credentials(
                         f"[get_credentials] Found OAuth 2.1 credentials for MCP session {session_id}"
                     )
 
-                    # Refresh expired credentials before checking scopes
-                    if credentials.expired and credentials.refresh_token:
+                    # Refresh invalid credentials before checking scopes
+                    if (not credentials.valid) and credentials.refresh_token:
                         try:
                             credentials.refresh(Request())
                             logger.info(
