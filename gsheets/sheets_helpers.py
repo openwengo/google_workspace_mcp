@@ -877,3 +877,81 @@ def _build_gradient_rule(
         rule_body["gradientRule"]["midpoint"] = gradient_points[1]
         rule_body["gradientRule"]["maxpoint"] = gradient_points[2]
     return rule_body
+
+
+def _extract_cell_notes_from_grid(spreadsheet: dict) -> list[dict[str, str]]:
+    """
+    Extract cell notes from spreadsheet grid data.
+
+    Returns a list of dictionaries with:
+        - "cell": cell A1 reference
+        - "note": the note text
+    """
+    notes: list[dict[str, str]] = []
+    for sheet in spreadsheet.get("sheets", []) or []:
+        sheet_title = sheet.get("properties", {}).get("title") or "Unknown"
+        for grid in sheet.get("data", []) or []:
+            start_row = _coerce_int(grid.get("startRow"), default=0)
+            start_col = _coerce_int(grid.get("startColumn"), default=0)
+            for row_offset, row_data in enumerate(grid.get("rowData", []) or []):
+                if not row_data:
+                    continue
+                for col_offset, cell_data in enumerate(
+                    row_data.get("values", []) or []
+                ):
+                    if not cell_data:
+                        continue
+                    note = cell_data.get("note")
+                    if not note:
+                        continue
+                    notes.append(
+                        {
+                            "cell": _format_a1_cell(
+                                sheet_title,
+                                start_row + row_offset,
+                                start_col + col_offset,
+                            ),
+                            "note": note,
+                        }
+                    )
+    return notes
+
+
+async def _fetch_sheet_notes(
+    service, spreadsheet_id: str, a1_range: str
+) -> list[dict[str, str]]:
+    """Fetch cell notes for the given range via spreadsheets.get with includeGridData."""
+    response = await asyncio.to_thread(
+        service.spreadsheets()
+        .get(
+            spreadsheetId=spreadsheet_id,
+            ranges=[a1_range],
+            includeGridData=True,
+            fields="sheets(properties(title),data(startRow,startColumn,rowData(values(note))))",
+        )
+        .execute
+    )
+    return _extract_cell_notes_from_grid(response)
+
+
+def _format_sheet_notes_section(
+    *, notes: list[dict[str, str]], range_label: str, max_details: int = 25
+) -> str:
+    """
+    Format a list of cell notes into a human-readable section.
+    """
+    if not notes:
+        return ""
+
+    lines = []
+    for item in notes[:max_details]:
+        cell = item.get("cell") or "(unknown cell)"
+        note = item.get("note") or "(empty note)"
+        lines.append(f"- {cell}: {note}")
+
+    suffix = (
+        f"\n... and {len(notes) - max_details} more notes"
+        if len(notes) > max_details
+        else ""
+    )
+    return f"\n\nCell notes in range '{range_label}':\n" + "\n".join(lines) + suffix

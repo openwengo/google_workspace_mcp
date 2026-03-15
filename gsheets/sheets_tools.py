@@ -22,9 +22,11 @@ from gsheets.sheets_helpers import (
     _build_gradient_rule,
     _fetch_detailed_sheet_errors,
     _fetch_sheet_hyperlinks,
+    _fetch_sheet_notes,
     _fetch_sheets_with_rules,
     _format_conditional_rules_section,
     _format_sheet_hyperlink_section,
+    _format_sheet_notes_section,
     _format_sheet_error_section,
     _parse_a1_range,
     _parse_condition_values,
@@ -179,6 +181,7 @@ async def read_sheet_values(
     spreadsheet_id: str,
     range_name: str = "A1:Z1000",
     include_hyperlinks: bool = False,
+    include_notes: bool = False,
 ) -> str:
     """
     Reads values from a specific range in a Google Sheet.
@@ -188,6 +191,8 @@ async def read_sheet_values(
         spreadsheet_id (str): The ID of the spreadsheet. Required.
         range_name (str): The range to read (e.g., "Sheet1!A1:D10", "A1:D10"). Defaults to "A1:Z1000".
         include_hyperlinks (bool): If True, also fetch hyperlink metadata for the range.
+            Defaults to False to avoid expensive includeGridData requests.
+        include_notes (bool): If True, also fetch cell notes for the range.
             Defaults to False to avoid expensive includeGridData requests.
 
     Returns:
@@ -247,6 +252,40 @@ async def read_sheet_values(
                     MAX_HYPERLINK_FETCH_CELLS,
                 )
 
+    notes_section = ""
+    if include_notes:
+        notes_range = _a1_range_for_values(resolved_range, values)
+        if not notes_range:
+            logger.info(
+                "[read_sheet_values] Skipping notes fetch for range '%s': unable to determine tight bounds",
+                resolved_range,
+            )
+        else:
+            cell_count = _a1_range_cell_count(notes_range) or sum(
+                len(row) for row in values
+            )
+            if cell_count <= MAX_HYPERLINK_FETCH_CELLS:
+                try:
+                    notes = await _fetch_sheet_notes(
+                        service, spreadsheet_id, notes_range
+                    )
+                    notes_section = _format_sheet_notes_section(
+                        notes=notes, range_label=notes_range
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[read_sheet_values] Failed fetching notes for range '%s': %s",
+                        notes_range,
+                        exc,
+                    )
+            else:
+                logger.info(
+                    "[read_sheet_values] Skipping notes fetch for large range '%s' (%d cells > %d limit)",
+                    notes_range,
+                    cell_count,
+                    MAX_HYPERLINK_FETCH_CELLS,
+                )
+
     detailed_errors_section = ""
     if _values_contain_sheets_errors(values):
         try:
@@ -277,7 +316,7 @@ async def read_sheet_values(
     )
 
     logger.info(f"Successfully read {len(values)} rows for {user_google_email}.")
-    return text_output + hyperlink_section + detailed_errors_section
+    return text_output + hyperlink_section + notes_section + detailed_errors_section
 
 
 @server.tool()
