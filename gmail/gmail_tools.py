@@ -1528,6 +1528,9 @@ async def draft_gmail_message(
               - 'mime_type' (optional): MIME type (defaults to 'application/octet-stream')
         include_signature (bool): Whether to append Gmail signature HTML from send-as settings.
             If unavailable (e.g., missing gmail.settings.basic scope), the draft is still created without signature.
+        quote_original (bool): Whether to include the original message as a quoted reply.
+            Requires thread_id to be provided. When enabled, fetches the original message
+            and appends it below the signature. Defaults to False.
 
     Returns:
         str: Confirmation message with the created draft's ID.
