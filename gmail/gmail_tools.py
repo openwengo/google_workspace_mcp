@@ -38,9 +38,14 @@ GMAIL_REQUEST_DELAY = 0.1
 HTML_BODY_TRUNCATE_LIMIT = 20000
 
 GMAIL_METADATA_HEADERS = [
-    "Subject", "From", "To", "Cc",
-    "Message-ID", "In-Reply-To", "References",
-    "Date"
+    "Subject",
+    "From",
+    "To",
+    "Cc",
+    "Message-ID",
+    "In-Reply-To",
+    "References",
+    "Date",
 ]
 LOW_VALUE_TEXT_PLACEHOLDERS = (
     "your client does not support html",
@@ -78,8 +83,6 @@ class _HTMLTextExtractor(HTMLParser):
 
     def get_text(self) -> str:
         return " ".join("".join(self._text).split())
-
-
 
 
 def _html_to_text(html: str) -> str:
