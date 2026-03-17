@@ -7,12 +7,13 @@ import sys
 from importlib import metadata, import_module
 from dotenv import load_dotenv
 
-# Prevent any stray output (e.g. platform identifiers like "darwin" on macOS)
-# from corrupting the MCP JSON-RPC handshake on stdout.  We capture anything
-# written to stdout during module-level initialisation and replay it to stderr
-# so that diagnostic information is not lost.
+# Prevent any stray startup output on macOS (e.g. platform identifiers) from
+# corrupting the MCP JSON-RPC handshake on stdout. We capture anything written
+# to stdout during module-level initialisation and replay it to stderr so that
+# diagnostic information is not lost.
 _original_stdout = sys.stdout
-sys.stdout = io.StringIO()
+if sys.platform == "darwin":
+    sys.stdout = io.StringIO()
 
 # Check for CLI mode early - before loading oauth_config
 # CLI mode requires OAuth 2.0 since there's no MCP session context
