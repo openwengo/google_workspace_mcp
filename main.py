@@ -133,15 +133,17 @@ def _restore_stdout() -> None:
     if captured_stdout is _original_stdout:
         return
 
+    captured = ""
     required_stringio_methods = ("getvalue", "write", "flush")
-    if not all(
-        callable(getattr(captured_stdout, method_name, None))
-        for method_name in required_stringio_methods
-    ):
-        return
+    try:
+        if all(
+            callable(getattr(captured_stdout, method_name, None))
+            for method_name in required_stringio_methods
+        ):
+            captured = captured_stdout.getvalue()
+    finally:
+        sys.stdout = _original_stdout
 
-    captured = captured_stdout.getvalue()
-    sys.stdout = _original_stdout
     if captured:
         print(captured, end="", file=sys.stderr)
 
