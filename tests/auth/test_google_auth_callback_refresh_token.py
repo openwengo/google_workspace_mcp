@@ -61,13 +61,19 @@ def test_callback_preserves_refresh_token_from_credential_store(monkeypatch):
         "auth.google_auth.create_oauth_flow",
         lambda **kwargs: _DummyFlow(callback_credentials),  # noqa: ARG005
     )
-    monkeypatch.setattr("auth.google_auth.get_oauth21_session_store", lambda: oauth_store)
-    monkeypatch.setattr("auth.google_auth.get_credential_store", lambda: credential_store)
+    monkeypatch.setattr(
+        "auth.google_auth.get_oauth21_session_store", lambda: oauth_store
+    )
+    monkeypatch.setattr(
+        "auth.google_auth.get_credential_store", lambda: credential_store
+    )
     monkeypatch.setattr(
         "auth.google_auth.get_user_info",
         lambda credentials: {"email": "user@gmail.com"},  # noqa: ARG005
     )
-    monkeypatch.setattr("auth.google_auth.save_credentials_to_session", lambda *args: None)
+    monkeypatch.setattr(
+        "auth.google_auth.save_credentials_to_session", lambda *args: None
+    )
     monkeypatch.setattr("auth.google_auth.is_stateless_mode", lambda: False)
 
     _email, credentials = handle_auth_callback(
@@ -95,13 +101,19 @@ def test_callback_prefers_session_refresh_token_over_credential_store(monkeypatc
         "auth.google_auth.create_oauth_flow",
         lambda **kwargs: _DummyFlow(callback_credentials),  # noqa: ARG005
     )
-    monkeypatch.setattr("auth.google_auth.get_oauth21_session_store", lambda: oauth_store)
-    monkeypatch.setattr("auth.google_auth.get_credential_store", lambda: credential_store)
+    monkeypatch.setattr(
+        "auth.google_auth.get_oauth21_session_store", lambda: oauth_store
+    )
+    monkeypatch.setattr(
+        "auth.google_auth.get_credential_store", lambda: credential_store
+    )
     monkeypatch.setattr(
         "auth.google_auth.get_user_info",
         lambda credentials: {"email": "user@gmail.com"},  # noqa: ARG005
     )
-    monkeypatch.setattr("auth.google_auth.save_credentials_to_session", lambda *args: None)
+    monkeypatch.setattr(
+        "auth.google_auth.save_credentials_to_session", lambda *args: None
+    )
     monkeypatch.setattr("auth.google_auth.is_stateless_mode", lambda: False)
 
     _email, credentials = handle_auth_callback(
