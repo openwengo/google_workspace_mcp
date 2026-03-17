@@ -227,7 +227,9 @@ def _append_signature_to_body(
     return f"{body}{separator}{signature_text}"
 
 
-async def _fetch_original_for_quote(service, thread_id: str, in_reply_to: Optional[str] = None) -> Optional[dict]:
+async def _fetch_original_for_quote(
+    service, thread_id: str, in_reply_to: Optional[str] = None
+) -> Optional[dict]:
     """Fetch the original message from a thread for quoting in a reply.
 
     When *in_reply_to* is provided the function looks for that specific
@@ -256,8 +258,7 @@ async def _fetch_original_for_quote(service, thread_id: str, in_reply_to: Option
     if in_reply_to:
         for msg in messages:
             headers = {
-                h["name"]: h["value"]
-                for h in msg.get("payload", {}).get("headers", [])
+                h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])
             }
             if headers.get("Message-ID") == in_reply_to:
                 target = msg
@@ -266,8 +267,7 @@ async def _fetch_original_for_quote(service, thread_id: str, in_reply_to: Option
         target = messages[-1]
 
     headers = {
-        h["name"]: h["value"]
-        for h in target.get("payload", {}).get("headers", [])
+        h["name"]: h["value"] for h in target.get("payload", {}).get("headers", [])
     }
     bodies = _extract_message_bodies(target.get("payload", {}))
     return {
@@ -1639,7 +1639,9 @@ async def draft_gmail_message(
                 draft_body, body_format, signature_html, original
             )
         else:
-            draft_body = _append_signature_to_body(draft_body, body_format, signature_html)
+            draft_body = _append_signature_to_body(
+                draft_body, body_format, signature_html
+            )
     else:
         draft_body = _append_signature_to_body(draft_body, body_format, signature_html)
 
