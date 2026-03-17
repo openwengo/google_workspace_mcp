@@ -129,6 +129,20 @@ def _parse_bool_env(value: str) -> bool:
     return value.lower() in ("1", "true", "yes", "on")
 
 
+def _maybe_apply_storage_prefix(client_storage, prefix: str | None):
+    """Apply a namespace prefix to storage collections when configured."""
+    normalized_prefix = (prefix or "").strip()
+    if not normalized_prefix:
+        return client_storage
+
+    from key_value.aio.wrappers.prefix_collections import PrefixCollectionsWrapper
+
+    return PrefixCollectionsWrapper(
+        key_value=client_storage,
+        prefix=normalized_prefix,
+    )
+
+
 def set_transport_mode(mode: str):
     """Sets the transport mode for the server."""
     _set_transport_mode(mode)
@@ -269,6 +283,10 @@ def configure_server_for_http():
                         ).strip()
                         or None
                     )
+                    valkey_prefix = (
+                        os.getenv("WORKSPACE_MCP_OAUTH_PROXY_VALKEY_PREFIX", "").strip()
+                        or None
+                    )
 
                     if not valkey_host:
                         valkey_host = "localhost"
@@ -311,6 +329,10 @@ def configure_server_for_http():
                                 )
                             )
 
+                    client_storage = _maybe_apply_storage_prefix(
+                        client_storage, valkey_prefix
+                    )
+
                     jwt_signing_key = validate_and_derive_jwt_key(
                         jwt_signing_key_override, config.client_secret
                     )
@@ -340,6 +362,11 @@ def configure_server_for_http():
                         logger.info(
                             "OAuth 2.1: Valkey connection timeout set to %sms",
                             valkey_connection_timeout_ms,
+                        )
+                    if valkey_prefix:
+                        logger.info(
+                            "OAuth 2.1: Valkey key prefix enabled: %s",
+                            valkey_prefix,
                         )
                     logger.info(
                         "OAuth 2.1: Applied Fernet encryption wrapper to Valkey client_storage (key derived from FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY or GOOGLE_OAUTH_CLIENT_SECRET)."

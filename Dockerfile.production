@@ -2,6 +2,8 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
+ENV UV_PROJECT_ENVIRONMENT=/opt/workspace-mcp-venv
+
 # Install system dependencies (curl for healthcheck, build tools for valkey-glide)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -41,18 +43,18 @@ RUN pip install --no-cache-dir uv
 
 # Copy application and prebuilt virtual environment
 COPY --from=builder /app /app
+COPY --from=builder /opt/workspace-mcp-venv /opt/workspace-mcp-venv
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
     && mkdir -p /app/store_creds \
-    && chown -R app:app /app \
+    && chown -R app:app /app /opt/workspace-mcp-venv \
     && chmod 755 /app/store_creds
 
 USER app
 
 # Ensure the venv is on PATH and prevent runtime syncs/downloads
-ENV PATH="/app/.venv/bin:$PATH"
-ENV UV_NO_SYNC=1
+ENV PATH="/opt/workspace-mcp-venv/bin:$PATH"
 
 # Expose port (use default of 8000 if PORT not set)
 EXPOSE 8000
@@ -70,4 +72,4 @@ ENV TOOLS=""
 
 # Use entrypoint for the base command and CMD for args
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["uv run main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
+CMD ["python main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
