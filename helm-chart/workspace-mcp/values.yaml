@@ -138,7 +138,7 @@ lifecycle: {}
 startupProbe:
   enabled: true
   path: /health
-  initialDelaySeconds: 60
+  initialDelaySeconds: 10
   periodSeconds: 10
   timeoutSeconds: 5
   successThreshold: 1
