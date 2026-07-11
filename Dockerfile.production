@@ -1,0 +1,86 @@
+FROM python:3.11-slim AS builder
+
+ARG UV_VERSION=0.11.28
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/workspace-mcp-venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+# Keep compilers and headers in the builder. They are required when a locked
+# dependency has no prebuilt wheel for the target architecture.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        libssl-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir "uv==${UV_VERSION}"
+
+# Install locked dependencies before copying the source to maximize layer reuse.
+COPY pyproject.toml uv.lock ./
+RUN uv sync \
+    --frozen \
+    --no-dev \
+    --no-install-project \
+    --extra disk \
+    --extra gcs \
+    --extra valkey
+
+COPY . .
+RUN uv sync \
+    --frozen \
+    --no-dev \
+    --no-editable \
+    --extra disk \
+    --extra gcs \
+    --extra valkey \
+    && rm -rf /root/.cache /root/.cache/uv
+
+
+FROM python:3.11-slim AS runtime
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+ENV PATH="/opt/workspace-mcp-venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
+    TOOL_TIER="" \
+    TOOLS=""
+
+WORKDIR /app
+
+# ca-certificates is required for Google APIs. libstdc++6 supports native
+# optional-dependency wheels on every architecture targeted by the build.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid "${APP_GID}" app \
+    && useradd \
+        --uid "${APP_UID}" \
+        --gid "${APP_GID}" \
+        --create-home \
+        --shell /usr/sbin/nologin \
+        app \
+    && install -d -o app -g app -m 0755 /app/store_creds
+
+COPY --from=builder --chown=app:app /app /app
+COPY --from=builder --chown=app:app /opt/workspace-mcp-venv /opt/workspace-mcp-venv
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import os, urllib.request; port = os.getenv('PORT', os.getenv('WORKSPACE_MCP_PORT', '8000')); urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=5).read()"
+
+# The shell only expands the chart's legacy TOOL_TIER/TOOLS variables; exec
+# makes Python PID 1 so Kubernetes stop signals and grace periods work correctly.
+CMD ["sh", "-c", "exec python main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
