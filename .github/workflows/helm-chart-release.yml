@@ -1,0 +1,26 @@
+name: Helm Chart Release
+
+on:
+  push:
+    tags:
+      - "google-workspace-mcp-*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Release chart
+        uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: helm-chart
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

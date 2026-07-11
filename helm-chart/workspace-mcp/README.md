@@ -6,7 +6,7 @@ Disclaimer - this is a user submitted feature and not one that the maintainer us
 
 ## Prerequisites
 
-- Kubernetes 1.19+
+- Kubernetes 1.25+
 - Helm 3.2.0+
 - Google Cloud Project with OAuth 2.0 credentials
 - Enabled Google Workspace APIs
@@ -32,11 +32,16 @@ The following table lists the configurable parameters and their default values:
 | `image.repository` | Container image repository | `workspace-mcp` |
 | `image.tag` | Container image tag | `""` (uses Chart.AppVersion) |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
-| `secrets.googleOAuth.clientId` | Google OAuth Client ID | `""` (required) |
-| `secrets.googleOAuth.clientSecret` | Google OAuth Client Secret | `""` (required) |
+| `secrets.googleOAuth.existingSecretName` | Existing secret with `client-id` and `client-secret` keys | `""` |
+| `secrets.googleOAuth.clientId` | Google OAuth Client ID, used when no existing secret is set | `""` (required) |
+| `secrets.googleOAuth.clientSecret` | Google OAuth Client Secret, used when no existing secret is set | `""` (required) |
 | `secrets.googleOAuth.userEmail` | Default user email for single-user mode | `""` |
 | `singleUserMode` | Enable single-user mode | `false` |
 | `tools.enabled` | List of tools to enable | `[]` (all tools enabled) |
+| `lifecycle` | Container lifecycle hooks | `{}` |
+| `startupProbe` | Optional startup probe configuration | `{"enabled":false,...}` |
+| `livenessProbe` | Liveness probe overrides; inherits `healthCheck` when empty | `{}` |
+| `readinessProbe` | Readiness probe overrides; inherits `healthCheck` when empty | `{}` |
 | `env.MCP_ENABLE_OAUTH21` | Enable OAuth 2.1 support for streamable HTTP | `"true"` |
 | `service.type` | Kubernetes service type | `ClusterIP` |
 | `service.port` | Service port | `8000` |
@@ -100,6 +105,17 @@ helm install workspace-mcp ./helm-chart/workspace-mcp \
   --set secrets.googleOAuth.clientSecret="your-secret"
 ```
 
+### Using an existing OAuth secret:
+
+```bash
+kubectl create secret generic workspace-mcp-oauth \
+  --from-literal=client-id="your-client-id" \
+  --from-literal=client-secret="your-secret"
+
+helm install workspace-mcp ./helm-chart/workspace-mcp \
+  --set secrets.googleOAuth.existingSecretName="workspace-mcp-oauth"
+```
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `workspace-mcp` deployment:
@@ -132,6 +148,8 @@ The chart includes health checks that verify the application is running correctl
 - Liveness probe checks `/health` endpoint
 - Readiness probe ensures the service is ready to accept traffic
 - Configurable timing and thresholds via `healthCheck` values
+- `livenessProbe` and `readinessProbe` can override `healthCheck` independently
+- `startupProbe` is available for slow-starting deployments and is disabled by default
 
 ## Security
 
