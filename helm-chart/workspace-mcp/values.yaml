@@ -118,6 +118,8 @@ env:
 secrets:
   # Google OAuth credentials (required)
   googleOAuth:
+    # Optional: reference an existing secret that provides client-id/client-secret.
+    existingSecretName: ""
     # Set these values or create secret manually
     clientId: ""
     clientSecret: ""
@@ -155,6 +157,27 @@ healthCheck:
   timeoutSeconds: 10
   successThreshold: 1
   failureThreshold: 3
+
+# Startup probe configuration. Disabled by default; enable for slow starts.
+startupProbe:
+  enabled: false
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 30
+
+# Per-probe overrides. When empty, both liveness and readiness inherit
+# healthCheck for backwards compatibility.
+livenessProbe: {}
+readinessProbe: {}
+
+# Container lifecycle hooks.
+lifecycle: {}
+  # preStop:
+  #   exec:
+  #     command: ["sh", "-c", "sleep 10"]
 
 # Pod disruption budget
 podDisruptionBudget:

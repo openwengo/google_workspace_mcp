@@ -1,6 +1,11 @@
 {{- if and .Values.persistence.enabled (eq .Values.persistence.accessMode "ReadWriteOnce") (or .Values.autoscaling.enabled (gt (int .Values.replicaCount) 1)) }}
 {{- fail "persistence.accessMode=ReadWriteOnce can only attach to one pod: set replicaCount=1 and autoscaling.enabled=false, or use a ReadWriteMany volume." }}
 {{- end }}
+{{- $oauthSecretName := include "workspace-mcp.oauthSecretName" . }}
+{{- $healthCheck := .Values.healthCheck | default (dict) }}
+{{- $startupProbe := .Values.startupProbe | default (dict) }}
+{{- $livenessProbe := mergeOverwrite (deepCopy $healthCheck) (.Values.livenessProbe | default (dict)) }}
+{{- $readinessProbe := mergeOverwrite (deepCopy $healthCheck) (.Values.readinessProbe | default (dict)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,44 +49,58 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
-          {{- if .Values.healthCheck.enabled }}
+          {{- if $startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ $startupProbe.path }}
+              port: http
+            initialDelaySeconds: {{ $startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ $startupProbe.periodSeconds }}
+            timeoutSeconds: {{ $startupProbe.timeoutSeconds }}
+            successThreshold: {{ $startupProbe.successThreshold }}
+            failureThreshold: {{ $startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if $livenessProbe.enabled }}
           livenessProbe:
             httpGet:
-              path: {{ .Values.healthCheck.path }}
+              path: {{ $livenessProbe.path }}
               port: http
-            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
-            successThreshold: {{ .Values.healthCheck.successThreshold }}
-            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+            initialDelaySeconds: {{ $livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ $livenessProbe.timeoutSeconds }}
+            successThreshold: {{ $livenessProbe.successThreshold }}
+            failureThreshold: {{ $livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if $readinessProbe.enabled }}
           readinessProbe:
             httpGet:
-              path: {{ .Values.healthCheck.path }}
+              path: {{ $readinessProbe.path }}
               port: http
-            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
-            successThreshold: {{ .Values.healthCheck.successThreshold }}
-            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+            initialDelaySeconds: {{ $readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ $readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ $readinessProbe.timeoutSeconds }}
+            successThreshold: {{ $readinessProbe.successThreshold }}
+            failureThreshold: {{ $readinessProbe.failureThreshold }}
           {{- end }}
           env:
             # Google OAuth credentials from secret
             - name: GOOGLE_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: client-id
             - name: GOOGLE_OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: client-secret
-            {{- if .Values.secrets.googleOAuth.userEmail }}
+            {{- if or .Values.secrets.googleOAuth.userEmail .Values.secrets.googleOAuth.existingSecretName .Values.singleUserMode }}
             - name: USER_GOOGLE_EMAIL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "workspace-mcp.fullname" . }}-oauth
+                  name: {{ $oauthSecretName }}
                   key: user-email
+                  optional: true
             {{- end }}
             # Single-user mode
             {{- if .Values.singleUserMode }}
@@ -108,6 +127,10 @@ spec:
           {{- if not .Values.command.disableArgs }}
           args:
             - "uv run main.py --transport streamable-http {{- if .Values.singleUserMode }} --single-user{{- end }} ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"
+          {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

@@ -2,24 +2,29 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (valkey-glide runtime + optional build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for faster dependency management
 RUN pip install --no-cache-dir uv
 
+ENV UV_PROJECT_ENVIRONMENT=/opt/workspace-mcp-venv
+
 COPY . .
 
-# Install Python dependencies using uv sync
-# --extra otel ships the OpenTelemetry SDK/exporter so tracing can be enabled at
-# runtime via OTEL_* env vars; it stays a no-op unless an OTLP endpoint is set.
-RUN uv sync --frozen --no-dev --extra disk --extra otel
+# Install storage backends and optional OpenTelemetry runtime support.
+RUN uv sync --frozen --no-dev --extra disk --extra valkey --extra otel
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+    && chown -R app:app /app /opt/workspace-mcp-venv
 
 # Give read and write access to the store_creds volume
 RUN mkdir -p /app/store_creds \
@@ -27,6 +32,8 @@ RUN mkdir -p /app/store_creds \
     && chmod 755 /app/store_creds
 
 USER app
+
+ENV PATH="/opt/workspace-mcp-venv/bin:$PATH"
 
 # Expose port (use default of 8000 if PORT not set)
 EXPOSE 8000
@@ -44,4 +51,4 @@ ENV TOOLS=""
 
 # Use entrypoint for the base command and CMD for args
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["uv run main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
+CMD ["python main.py --transport streamable-http ${TOOL_TIER:+--tool-tier \"$TOOL_TIER\"} ${TOOLS:+--tools $TOOLS}"]
