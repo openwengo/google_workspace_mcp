@@ -152,6 +152,38 @@ async def test_inspect_doc_structure_requests_a_field_mask():
 
 
 @pytest.mark.asyncio
+async def test_inspect_doc_structure_field_mask_omits_legacy_top_level_content():
+    """Regression test for #1108.
+
+    documents.get() rejects a field mask that names top-level body/headers/
+    footers alongside tabs(...) once includeTabsContent=True is set, with
+    "Field mask may not contain legacy text-level Document resource fields
+    while requesting tabs content". Since the call always sets
+    includeTabsContent=True and Google leaves those legacy fields empty
+    anyway in that mode, the mask must not request them at the top level —
+    only within the tabs(...) branch.
+    """
+    service = _docs_service({"body": {"content": []}})
+
+    await _unwrap(docs_tools.inspect_doc_structure)(
+        service=service,
+        user_google_email="user@example.com",
+        document_id="doc123",
+    )
+
+    call_kwargs = service.documents.return_value.get.call_args.kwargs
+    assert call_kwargs.get("includeTabsContent") is True
+
+    fields = call_kwargs["fields"]
+    top_level_fields = fields.split("tabs(", 1)[0]
+    for legacy_field in ("body(", "headers", "footers"):
+        assert legacy_field not in top_level_fields, (
+            f"{legacy_field!r} must not appear at the top level of the field "
+            f"mask alongside tabs(...): {fields!r}"
+        )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("detailed", [False, True])
 @pytest.mark.parametrize("populated", [False, True])
 @pytest.mark.parametrize("tab_id", [None, "t.child"])
