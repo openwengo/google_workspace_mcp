@@ -389,7 +389,15 @@ async def test_run_script_function():
     mock_service = Mock()
     mock_response = {"response": {"result": "Success"}}
 
-    mock_service.scripts().run().execute.return_value = mock_response
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {
+                "deploymentId": "deploy123",
+                "deploymentConfig": {"versionNumber": 1},
+            }
+        ]
+    }
+    mock_service.scripts().run.return_value.execute.return_value = mock_response
 
     result = await _run_script_function_impl(
         service=mock_service,
@@ -401,6 +409,87 @@ async def test_run_script_function():
 
     assert "Execution successful" in result
     assert "myFunction" in result
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="deploy123",
+        body={"function": "myFunction", "devMode": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_uses_highest_pinned_deployment():
+    """HEAD deployments are skipped and the highest pinned version is executed."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {"deploymentId": "head", "deploymentConfig": {}},
+            {
+                "deploymentId": "deploy2",
+                "deploymentConfig": {"versionNumber": 2},
+            },
+            {
+                "deploymentId": "deploy5",
+                "deploymentConfig": {"versionNumber": 5},
+            },
+        ]
+    }
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="deploy5",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_uses_supplied_deployment_without_lookup():
+    """A supplied deployment ID bypasses deployment discovery."""
+    mock_service = Mock()
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+        deployment_id="deploy-known",
+    )
+
+    mock_service.projects().deployments().list.assert_not_called()
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="deploy-known",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_requires_pinned_deployment():
+    """Execution is not attempted when only a HEAD deployment exists."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [{"deploymentId": "head", "deploymentConfig": {}}]
+    }
+
+    result = await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    assert "needs an API Executable deployment" in result
+    assert "manage_deployment(action='create')" in result
+    mock_service.scripts().run.assert_not_called()
 
 
 @pytest.mark.asyncio

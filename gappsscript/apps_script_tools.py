@@ -496,6 +496,7 @@ async def _run_script_function_impl(
     function_name: str,
     parameters: Optional[list[object]] = None,
     dev_mode: bool = False,
+    deployment_id: Optional[str] = None,
 ) -> str:
     """Internal implementation for run_script_function."""
     logger.info(
@@ -508,8 +509,32 @@ async def _run_script_function_impl(
         request_body["parameters"] = parameters
 
     try:
+        if deployment_id is None:
+            deployments_response = await asyncio.to_thread(
+                service.projects().deployments().list(scriptId=script_id).execute
+            )
+            deployments = [
+                deployment
+                for deployment in deployments_response.get("deployments", [])
+                if deployment.get("deploymentConfig", {}).get("versionNumber")
+                is not None
+            ]
+
+            if not deployments:
+                return (
+                    "Execution failed\n"
+                    f"Function: {function_name}\n"
+                    "Error: This project needs an API Executable deployment before "
+                    "it can be run. Create one with manage_deployment(action='create')."
+                )
+
+            deployment_id = max(
+                deployments,
+                key=lambda deployment: deployment["deploymentConfig"]["versionNumber"],
+            )["deploymentId"]
+
         response = await asyncio.to_thread(
-            service.scripts().run(scriptId=script_id, body=request_body).execute
+            service.scripts().run(scriptId=deployment_id, body=request_body).execute
         )
 
         if "error" in response:
@@ -552,6 +577,7 @@ async def run_script_function(
     function_name: str,
     parameters: Optional[ObjectList] = None,
     dev_mode: bool = False,
+    deployment_id: Optional[str] = None,
 ) -> str:
     """
     Executes a function in a deployed script.
@@ -563,12 +589,20 @@ async def run_script_function(
         function_name: Name of function to execute
         parameters: Optional list of parameters to pass
         dev_mode: Whether to run latest code vs deployed version
+        deployment_id: Optional API Executable deployment ID. When supplied,
+            skips the automatic deployment lookup.
 
     Returns:
         str: Formatted string with execution result or error
     """
     return await _run_script_function_impl(
-        service, user_google_email, script_id, function_name, parameters, dev_mode
+        service,
+        user_google_email,
+        script_id,
+        function_name,
+        parameters,
+        dev_mode,
+        deployment_id,
     )
 
 
