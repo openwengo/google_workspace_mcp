@@ -8,7 +8,9 @@ is worse than no search — it produces a confident "not present" that is wrong.
 import io
 import zipfile
 
-from core.utils import extract_office_xml_text
+import pytest
+
+from core.utils import OfficeXmlExtractionError, extract_office_xml_text
 
 W_NS = (
     'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -480,3 +482,40 @@ class TestFallbackAndOtherFormats:
         # values became newline-joined or concatenated, which is the very thing
         # this test exists to prevent.
         assert out == "alpha beta"
+
+
+class TestDamagedParts:
+    """A damaged part must not degrade into partial text or a false 'empty'."""
+
+    def _xlsx(self, **members: str) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            for name, xml in members.items():
+                zf.writestr(name, xml)
+        return buf.getvalue()
+
+    def test_malformed_related_word_part_raises(self):
+        data = _docx(_p("Body"), header1="<w:hdr")
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, DOCX_MIME)
+
+    def test_missing_related_word_part_raises(self):
+        data = _docx(_p("Body"), relationships=[("rId1", "header", "header1.xml")])
+        with pytest.raises(OfficeXmlExtractionError, match="header1.xml"):
+            extract_office_xml_text(data, DOCX_MIME)
+
+    def test_malformed_worksheet_raises(self):
+        data = self._xlsx(**{"xl/worksheets/sheet1.xml": "<worksheet"})
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, XLSX_MIME)
+
+    def test_malformed_shared_strings_raises(self):
+        ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        data = self._xlsx(
+            **{
+                "xl/worksheets/sheet1.xml": f"<worksheet {ns}/>",
+                "xl/sharedStrings.xml": "<sst",
+            }
+        )
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, XLSX_MIME)

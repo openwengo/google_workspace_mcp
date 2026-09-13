@@ -590,6 +590,11 @@ def extract_office_xml_text(file_bytes: bytes, mime_type: str) -> Optional[str]:
                 # Attempt to parse sharedStrings.xml for Excel files
                 try:
                     shared_strings_xml = zf.read("xl/sharedStrings.xml")
+                except KeyError:
+                    logger.info(
+                        "No sharedStrings.xml found in Excel file (this is optional)."
+                    )
+                else:
                     shared_strings_root = ET.fromstring(shared_strings_xml)
                     for si_element in shared_strings_root.findall(
                         f"{{{ns_excel_main}}}si"
@@ -600,179 +605,148 @@ def extract_office_xml_text(file_bytes: bytes, mime_type: str) -> Optional[str]:
                             if t_element.text:
                                 text_parts.append(t_element.text)
                         shared_strings.append("".join(text_parts))
-                except KeyError:
-                    logger.info(
-                        "No sharedStrings.xml found in Excel file (this is optional)."
-                    )
-                except ET.ParseError as e:
-                    logger.error(f"Error parsing sharedStrings.xml: {e}")
-                except (
-                    Exception
-                ) as e:  # Catch any other unexpected error during sharedStrings parsing
-                    logger.error(
-                        f"Unexpected error processing sharedStrings.xml: {e}",
-                        exc_info=True,
-                    )
             else:
                 return None
 
             pieces: List[str] = []
             for member in targets:
-                try:
-                    if member in parsed_members:
-                        xml_root, choice_namespaces = parsed_members[member]
-                    else:
+                if member in parsed_members:
+                    xml_root, choice_namespaces = parsed_members[member]
+                else:
+                    try:
                         xml_content = zf.read(member)
-                        if (
-                            mime_type
-                            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        ):
-                            xml_root = ET.fromstring(xml_content)
-                            choice_namespaces = {}
-                        else:
-                            xml_root, choice_namespaces = (
-                                _parse_xml_with_choice_namespaces(xml_content)
-                            )
-                    member_texts: List[str] = []
-
+                    except KeyError as e:
+                        raise OfficeXmlExtractionError(
+                            f"missing related part: {member}"
+                        ) from e
                     if (
                         mime_type
                         == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     ):
-                        for cell_element in xml_root.findall(
-                            f".//{{{ns_excel_main}}}c"
-                        ):  # Find all <c> elements
-                            value_element = cell_element.find(
-                                f"{{{ns_excel_main}}}v"
-                            )  # Find <v> under <c>
-
-                            # Skip if cell has no value element or value element has no text
-                            if value_element is None or value_element.text is None:
-                                continue
-
-                            cell_type = cell_element.get("t")
-                            if cell_type == "s":  # Shared string
-                                try:
-                                    ss_idx = int(value_element.text)
-                                    if 0 <= ss_idx < len(shared_strings):
-                                        member_texts.append(shared_strings[ss_idx])
-                                    else:
-                                        logger.warning(
-                                            f"Invalid shared string index {ss_idx} in {member}. Max index: {len(shared_strings) - 1}"
-                                        )
-                                except ValueError:
-                                    logger.warning(
-                                        f"Non-integer shared string index: '{value_element.text}' in {member}."
-                                    )
-                            else:  # Direct value (number, boolean, inline string if not 's')
-                                member_texts.append(value_element.text)
-                    else:  # Word or PowerPoint
-                        # Runs belonging to one paragraph concatenate without an
-                        # invented separator. Word routinely splits a token across
-                        # runs for formatting, spell-check state, and tracked
-                        # changes; real spacing is carried by the text itself.
-                        #
-                        # Nested text-box paragraphs interrupt their outer
-                        # paragraph. Flushing when the closest owner changes keeps
-                        # XML order without attributing the nested text twice.
-                        parents = {
-                            child: parent
-                            for parent in xml_root.iter()
-                            for child in parent
-                        }
-
-                        def _line_owner(node):
-                            """Closest paragraph ancestor, else nearest non-run container."""
-                            cur = parents.get(node)
-                            nearest_non_run = None
-                            while cur is not None:
-                                _, local_name = _xml_name(cur.tag)
-                                if local_name == "p":
-                                    return cur
-                                if nearest_non_run is None and local_name != "r":
-                                    nearest_non_run = cur
-                                cur = parents.get(cur)
-                            return nearest_non_run
-
-                        skip = _alternate_content_skip_set(xml_root, choice_namespaces)
-                        current_owner = None
-                        current_parts: list[str] = []
-
-                        def flush_line() -> None:
-                            if not current_parts:
-                                return
-                            # Text-space padding is normalized at paragraph
-                            # boundaries, but explicit tabs/breaks remain content.
-                            line = "".join(current_parts).strip(" ")
-                            if line:
-                                member_texts.append(line)
-
-                        for node in xml_root.iter():
-                            if id(node) in skip:
-                                continue
-                            namespace, local_name = _xml_name(node.tag)
-                            piece = None
-                            if local_name == "t" and node.text:
-                                piece = node.text
-                            elif namespace in _WORDPROCESSINGML_NAMESPACES and (
-                                local_name in {"tab", "br", "cr"}
-                            ):
-                                # A Word tab/break is content only directly under
-                                # w:r; w:tab under w:pPr/w:tabs is a tab stop.
-                                parent = parents.get(node)
-                                if (
-                                    parent is not None
-                                    and _xml_name(parent.tag)[1] == "r"
-                                ):
-                                    piece = "\t" if local_name == "tab" else "\n"
-                            elif (
-                                namespace in _DRAWINGML_NAMESPACES
-                                and local_name == "br"
-                            ):
-                                # DrawingML a:br is a direct a:p child between
-                                # runs, unlike Word's w:br-under-w:r structure.
-                                parent = parents.get(node)
-                                if (
-                                    parent is not None
-                                    and _xml_name(parent.tag)[1] == "p"
-                                ):
-                                    piece = "\n"
-                            if piece is None:
-                                continue
-                            owner = _line_owner(node)
-                            if owner is None:
-                                owner = node
-                            if current_owner is not None and owner is not current_owner:
-                                flush_line()
-                                current_parts = []
-                            current_owner = owner
-                            current_parts.append(piece)
-
-                        flush_line()
-
-                    if member_texts:
-                        # Word/PowerPoint entries are one paragraph each, so join
-                        # them with newlines: paragraph boundaries carry meaning,
-                        # and collapsing them runs headings into body text.
-                        # Spreadsheet entries stay space-joined as before.
-                        sep = (
-                            " "
-                            if mime_type
-                            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            else "\n"
+                        xml_root = ET.fromstring(xml_content)
+                        choice_namespaces = {}
+                    else:
+                        xml_root, choice_namespaces = _parse_xml_with_choice_namespaces(
+                            xml_content
                         )
-                        pieces.append(sep.join(member_texts))
+                member_texts: List[str] = []
 
-                except ET.ParseError as e:
-                    logger.warning(
-                        f"Could not parse XML in member '{member}' for {mime_type} file: {e}"
+                if (
+                    mime_type
+                    == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ):
+                    for cell_element in xml_root.findall(
+                        f".//{{{ns_excel_main}}}c"
+                    ):  # Find all <c> elements
+                        value_element = cell_element.find(
+                            f"{{{ns_excel_main}}}v"
+                        )  # Find <v> under <c>
+
+                        # Skip if cell has no value element or value element has no text
+                        if value_element is None or value_element.text is None:
+                            continue
+
+                        cell_type = cell_element.get("t")
+                        if cell_type == "s":  # Shared string
+                            try:
+                                ss_idx = int(value_element.text)
+                                if 0 <= ss_idx < len(shared_strings):
+                                    member_texts.append(shared_strings[ss_idx])
+                                else:
+                                    logger.warning(
+                                        f"Invalid shared string index {ss_idx} in {member}. Max index: {len(shared_strings) - 1}"
+                                    )
+                            except ValueError:
+                                logger.warning(
+                                    f"Non-integer shared string index: '{value_element.text}' in {member}."
+                                )
+                        else:  # Direct value (number, boolean, inline string if not 's')
+                            member_texts.append(value_element.text)
+                else:  # Word or PowerPoint
+                    # Runs belonging to one paragraph concatenate without an
+                    # invented separator. Word routinely splits a token across
+                    # runs for formatting, spell-check state, and tracked
+                    # changes; real spacing is carried by the text itself.
+                    #
+                    # Nested text-box paragraphs interrupt their outer
+                    # paragraph. Flushing when the closest owner changes keeps
+                    # XML order without attributing the nested text twice.
+                    parents = {
+                        child: parent for parent in xml_root.iter() for child in parent
+                    }
+
+                    def _line_owner(node):
+                        """Closest paragraph ancestor, else nearest non-run container."""
+                        cur = parents.get(node)
+                        nearest_non_run = None
+                        while cur is not None:
+                            _, local_name = _xml_name(cur.tag)
+                            if local_name == "p":
+                                return cur
+                            if nearest_non_run is None and local_name != "r":
+                                nearest_non_run = cur
+                            cur = parents.get(cur)
+                        return nearest_non_run
+
+                    skip = _alternate_content_skip_set(xml_root, choice_namespaces)
+                    current_owner = None
+                    current_parts: list[str] = []
+
+                    def flush_line() -> None:
+                        if not current_parts:
+                            return
+                        # Text-space padding is normalized at paragraph
+                        # boundaries, but explicit tabs/breaks remain content.
+                        line = "".join(current_parts).strip(" ")
+                        if line:
+                            member_texts.append(line)
+
+                    for node in xml_root.iter():
+                        if id(node) in skip:
+                            continue
+                        namespace, local_name = _xml_name(node.tag)
+                        piece = None
+                        if local_name == "t" and node.text:
+                            piece = node.text
+                        elif namespace in _WORDPROCESSINGML_NAMESPACES and (
+                            local_name in {"tab", "br", "cr"}
+                        ):
+                            # A Word tab/break is content only directly under
+                            # w:r; w:tab under w:pPr/w:tabs is a tab stop.
+                            parent = parents.get(node)
+                            if parent is not None and _xml_name(parent.tag)[1] == "r":
+                                piece = "\t" if local_name == "tab" else "\n"
+                        elif namespace in _DRAWINGML_NAMESPACES and local_name == "br":
+                            # DrawingML a:br is a direct a:p child between
+                            # runs, unlike Word's w:br-under-w:r structure.
+                            parent = parents.get(node)
+                            if parent is not None and _xml_name(parent.tag)[1] == "p":
+                                piece = "\n"
+                        if piece is None:
+                            continue
+                        owner = _line_owner(node)
+                        if owner is None:
+                            owner = node
+                        if current_owner is not None and owner is not current_owner:
+                            flush_line()
+                            current_parts = []
+                        current_owner = owner
+                        current_parts.append(piece)
+
+                    flush_line()
+
+                if member_texts:
+                    # Word/PowerPoint entries are one paragraph each, so join
+                    # them with newlines: paragraph boundaries carry meaning,
+                    # and collapsing them runs headings into body text.
+                    # Spreadsheet entries stay space-joined as before.
+                    sep = (
+                        " "
+                        if mime_type
+                        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        else "\n"
                     )
-                except Exception as e:
-                    logger.error(
-                        f"Error processing member '{member}' for {mime_type}: {e}",
-                        exc_info=True,
-                    )
-                    # continue processing other members
+                    pieces.append(sep.join(member_texts))
 
             if not pieces:  # If no text was extracted at all
                 return None
