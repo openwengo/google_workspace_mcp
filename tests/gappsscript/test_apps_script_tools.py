@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 from typing import get_type_hints
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -394,6 +394,7 @@ async def test_run_script_function():
             {
                 "deploymentId": "deploy123",
                 "deploymentConfig": {"versionNumber": 1},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
             }
         ]
     }
@@ -416,19 +417,21 @@ async def test_run_script_function():
 
 
 @pytest.mark.asyncio
-async def test_run_script_function_uses_highest_pinned_deployment():
-    """HEAD deployments are skipped and the highest pinned version is executed."""
+async def test_run_script_function_uses_only_api_executable_deployment():
+    """HEAD and non-executable deployments are skipped."""
     mock_service = Mock()
     mock_service.projects().deployments().list().execute.return_value = {
         "deployments": [
             {"deploymentId": "head", "deploymentConfig": {}},
             {
-                "deploymentId": "deploy2",
+                "deploymentId": "web-app",
                 "deploymentConfig": {"versionNumber": 2},
+                "entryPoints": [{"entryPointType": "WEB_APP"}],
             },
             {
-                "deploymentId": "deploy5",
+                "deploymentId": "api-executable",
                 "deploymentConfig": {"versionNumber": 5},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
             },
         ]
     }
@@ -444,7 +447,86 @@ async def test_run_script_function_uses_highest_pinned_deployment():
     )
 
     mock_service.scripts().run.assert_called_once_with(
-        scriptId="deploy5",
+        scriptId="api-executable",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_requires_id_for_multiple_api_deployments():
+    """Automatic discovery must not guess between runnable deployments."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {
+                "deploymentId": "production",
+                "deploymentConfig": {"versionNumber": 4},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+            {
+                "deploymentId": "staging",
+                "deploymentConfig": {"versionNumber": 5},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+        ]
+    }
+
+    result = await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    assert "Multiple API Executable deployments were found" in result
+    assert "production (version 4)" in result
+    assert "staging (version 5)" in result
+    mock_service.scripts().run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_searches_all_deployment_pages():
+    """A runnable deployment on a later page is discovered."""
+    mock_service = Mock()
+    deployment_list = mock_service.projects().deployments().list
+    deployment_list.return_value.execute.side_effect = [
+        {
+            "deployments": [
+                {
+                    "deploymentId": "web-app",
+                    "deploymentConfig": {"versionNumber": 8},
+                    "entryPoints": [{"entryPointType": "WEB_APP"}],
+                }
+            ],
+            "nextPageToken": "page-2",
+        },
+        {
+            "deployments": [
+                {
+                    "deploymentId": "api-executable",
+                    "deploymentConfig": {"versionNumber": 3},
+                    "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+                }
+            ]
+        },
+    ]
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    assert deployment_list.call_args_list == [
+        call(scriptId="test123"),
+        call(scriptId="test123", pageToken="page-2"),
+    ]
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="api-executable",
         body={"function": "myFunction", "devMode": False},
     )
 
@@ -473,11 +555,18 @@ async def test_run_script_function_uses_supplied_deployment_without_lookup():
 
 
 @pytest.mark.asyncio
-async def test_run_script_function_requires_pinned_deployment():
-    """Execution is not attempted when only a HEAD deployment exists."""
+async def test_run_script_function_requires_api_executable_deployment():
+    """Execution is not attempted without a versioned API executable."""
     mock_service = Mock()
     mock_service.projects().deployments().list().execute.return_value = {
-        "deployments": [{"deploymentId": "head", "deploymentConfig": {}}]
+        "deployments": [
+            {"deploymentId": "head", "deploymentConfig": {}},
+            {
+                "deploymentId": "web-app",
+                "deploymentConfig": {"versionNumber": 1},
+                "entryPoints": [{"entryPointType": "WEB_APP"}],
+            },
+        ]
     }
 
     result = await _run_script_function_impl(
@@ -487,8 +576,9 @@ async def test_run_script_function_requires_pinned_deployment():
         function_name="myFunction",
     )
 
-    assert "needs an API Executable deployment" in result
-    assert "manage_deployment(action='create')" in result
+    assert "No versioned API Executable deployment was found" in result
+    assert "Deploy > New deployment > API Executable" in result
+    assert "manifest already defines executionApi" in result
     mock_service.scripts().run.assert_not_called()
 
 

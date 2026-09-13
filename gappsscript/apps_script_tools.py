@@ -509,29 +509,70 @@ async def _run_script_function_impl(
         request_body["parameters"] = parameters
 
     try:
-        if deployment_id is None:
-            deployments_response = await asyncio.to_thread(
-                service.projects().deployments().list(scriptId=script_id).execute
-            )
+        if not deployment_id:
+            all_deployments = []
+            page_token = None
+            while True:
+                list_params = {"scriptId": script_id}
+                if page_token:
+                    list_params["pageToken"] = page_token
+
+                deployments_response = await asyncio.to_thread(
+                    service.projects().deployments().list(**list_params).execute
+                )
+                all_deployments.extend(deployments_response.get("deployments", []))
+                page_token = deployments_response.get("nextPageToken")
+                if not page_token:
+                    break
+
             deployments = [
                 deployment
-                for deployment in deployments_response.get("deployments", [])
-                if deployment.get("deploymentConfig", {}).get("versionNumber")
+                for deployment in all_deployments
+                if deployment.get("deploymentId")
+                and deployment.get("deploymentConfig", {}).get("versionNumber")
                 is not None
+                and any(
+                    entry_point.get("entryPointType") == "EXECUTION_API"
+                    for entry_point in deployment.get("entryPoints", [])
+                )
             ]
 
             if not deployments:
                 return (
                     "Execution failed\n"
                     f"Function: {function_name}\n"
-                    "Error: This project needs an API Executable deployment before "
-                    "it can be run. Create one with manage_deployment(action='create')."
+                    "Error: No versioned API Executable deployment was found. In the "
+                    "Apps Script editor, use Deploy > New deployment > API Executable. "
+                    "The script and caller must share a standard Google Cloud project. "
+                    "manage_deployment(action='create') is sufficient only when the "
+                    "script manifest already defines executionApi."
                 )
 
-            deployment_id = max(
-                deployments,
-                key=lambda deployment: deployment["deploymentConfig"]["versionNumber"],
-            )["deploymentId"]
+            if len(deployments) > 1:
+                candidates = sorted(
+                    deployments,
+                    key=lambda deployment: deployment["deploymentConfig"][
+                        "versionNumber"
+                    ],
+                    reverse=True,
+                )
+                candidate_lines = [
+                    "- "
+                    f"{deployment['deploymentId']} "
+                    f"(version {deployment['deploymentConfig']['versionNumber']})"
+                    for deployment in candidates
+                ]
+                return "\n".join(
+                    [
+                        "Execution failed",
+                        f"Function: {function_name}",
+                        "Error: Multiple API Executable deployments were found. "
+                        "Pass deployment_id explicitly:",
+                        *candidate_lines,
+                    ]
+                )
+
+            deployment_id = deployments[0]["deploymentId"]
 
         response = await asyncio.to_thread(
             service.scripts().run(scriptId=deployment_id, body=request_body).execute
@@ -569,7 +610,7 @@ async def _run_script_function_impl(
     ),
 )
 @handle_http_errors("run_script_function", service_type="script")
-@require_google_service("script", "script_run")
+@require_google_service("script", ["script_run", "script_deployments_readonly"])
 async def run_script_function(
     service: Any,
     user_google_email: str,
@@ -590,7 +631,8 @@ async def run_script_function(
         parameters: Optional list of parameters to pass
         dev_mode: Whether to run latest code vs deployed version
         deployment_id: Optional API Executable deployment ID. When supplied,
-            skips the automatic deployment lookup.
+            skips the automatic deployment lookup. Required when the project has
+            more than one versioned API Executable deployment.
 
     Returns:
         str: Formatted string with execution result or error
