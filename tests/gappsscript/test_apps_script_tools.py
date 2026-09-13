@@ -642,11 +642,17 @@ async def test_list_script_processes():
 
 @pytest.mark.asyncio
 async def test_list_script_processes_with_script_id():
-    """script_id must be forwarded as the nested userProcessFilter.scriptId
-    query param, not a top-level scriptId kwarg (regression for the
-    'unexpected keyword argument scriptId' TypeError)."""
+    """script_id must go through processes().listScriptProcesses(scriptId=...),
+    not processes().list() — the latter only exposes script-scoped filtering
+    via a nested userProcessFilter.scriptId param that googleapiclient will not
+    accept as a bare 'scriptId' kwarg (regression for two consecutive wrong
+    fixes: 'unexpected keyword argument scriptId', then the same error for the
+    literal dotted string). See test_list_script_processes_matches_real_api_schema
+    below for a test that would have caught both without a live API call."""
     mock_service = Mock()
-    mock_service.processes().list().execute.return_value = {"processes": []}
+    mock_service.processes().listScriptProcesses().execute.return_value = {
+        "processes": []
+    }
 
     await _list_script_processes_impl(
         service=mock_service,
@@ -655,10 +661,53 @@ async def test_list_script_processes_with_script_id():
         script_id="test123",
     )
 
-    _, call_kwargs = mock_service.processes().list.call_args
-    assert call_kwargs.get("userProcessFilter.scriptId") == "test123"
+    _, call_kwargs = mock_service.processes().listScriptProcesses.call_args
+    assert call_kwargs.get("scriptId") == "test123"
     assert call_kwargs.get("pageSize") == 25
-    assert "scriptId" not in call_kwargs
+    mock_service.processes().list.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_list_script_processes_without_script_id_uses_list():
+    mock_service = Mock()
+    mock_service.processes().list().execute.return_value = {"processes": []}
+
+    await _list_script_processes_impl(
+        service=mock_service, user_google_email="test@example.com", page_size=25
+    )
+
+    _, call_kwargs = mock_service.processes().list.call_args
+    assert call_kwargs == {"pageSize": 25}
+    mock_service.processes().listScriptProcesses.assert_not_called()
+
+
+def test_list_script_processes_matches_real_api_schema():
+    """Build real request objects against the actual Apps Script API v1
+    discovery document (cached as a fixture — no network) instead of a Mock,
+    so a parameter name that Mock() would happily accept but the real
+    googleapiclient-generated method would reject with TypeError gets caught
+    here. This is the test that should have existed before either of the two
+    wrong fixes shipped."""
+    import json
+    import os
+
+    import httplib2
+    from googleapiclient.discovery import build_from_document
+
+    fixture_path = os.path.join(
+        os.path.dirname(__file__), "fixtures", "script_discovery_v1.json"
+    )
+    with open(fixture_path, encoding="utf-8") as f:
+        discovery_doc = json.load(f)
+
+    service = build_from_document(discovery_doc, http=httplib2.Http())
+
+    request = service.processes().listScriptProcesses(scriptId="abc123", pageSize=10)
+    assert "scriptId=abc123" in request.uri
+    assert "pageSize=10" in request.uri
+
+    request = service.processes().list(pageSize=10)
+    assert "pageSize=10" in request.uri
 
 
 @pytest.mark.asyncio

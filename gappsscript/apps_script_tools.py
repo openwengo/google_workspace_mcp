@@ -862,16 +862,23 @@ async def _list_script_processes_impl(
         f"[list_script_processes] Email: {user_google_email}, PageSize: {page_size}"
     )
 
-    request_params = {"pageSize": page_size}
     if script_id:
-        # processes.list() takes the script ID under the nested
-        # userProcessFilter.scriptId query param, not a top-level scriptId
-        # kwarg (which raises "unexpected keyword argument scriptId").
-        request_params["userProcessFilter.scriptId"] = script_id
-
-    response = await asyncio.to_thread(
-        service.processes().list(**request_params).execute
-    )
+        # processes.list() only exposes script-scoped filtering via the
+        # nested userProcessFilter.scriptId param, and googleapiclient
+        # requires that as the underscore-joined kwarg userProcessFilter_scriptId
+        # (a bare "scriptId" or the literal dotted string both raise
+        # "unexpected keyword argument"). processes.listScriptProcesses()
+        # takes a clean top-level scriptId instead, so use it directly
+        # whenever we're filtering by one script.
+        response = await asyncio.to_thread(
+            service.processes()
+            .listScriptProcesses(scriptId=script_id, pageSize=page_size)
+            .execute
+        )
+    else:
+        response = await asyncio.to_thread(
+            service.processes().list(pageSize=page_size).execute
+        )
 
     processes = response.get("processes", [])
 
