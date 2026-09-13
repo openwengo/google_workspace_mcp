@@ -101,9 +101,10 @@ _STRUCTURE_CONTENT_FIELDS = (
 )
 # headers/footers are maps and childTabs is recursive, so neither is sub-masked:
 # both stay whole, which costs little and cannot silently drop content.
+# With includeTabsContent=True the API rejects legacy top-level text fields in
+# the mask (issue #1108), so everything but the title is read from tabs.
 _STRUCTURE_FIELDS = (
-    f"title,documentStyle,namedRanges,headers,footers,body({_STRUCTURE_CONTENT_FIELDS}),"
-    f"tabs(tabProperties,childTabs,documentTab("
+    f"title,tabs(tabProperties,childTabs,documentTab("
     f"documentStyle,namedRanges,headers,footers,body({_STRUCTURE_CONTENT_FIELDS})))"
 )
 
