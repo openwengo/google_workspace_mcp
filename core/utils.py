@@ -47,6 +47,11 @@ _OFFICE_RELATIONSHIP_BASES = {
     "https://schemas.openxmlformats.org/officeDocument/2006/relationships",
     "http://purl.oclc.org/ooxml/officeDocument/relationships",
 }
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+_OFFICE_XML_MIME_TYPES = {_DOCX_MIME, _XLSX_MIME, _PPTX_MIME}
+_EXCEL_MAIN_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _WORD_TEXT_RELATIONSHIP_KINDS = {"header", "footer", "footnotes", "endnotes"}
 _WORD_TEXT_RELATIONSHIP_TYPES = {
     f"{base}/{kind}": kind
@@ -323,6 +328,10 @@ def check_credentials_directory_permissions(credentials_dir: str = None) -> None
     )
 
 
+class OfficeXmlExtractionError(Exception):
+    """Raised when an Office file cannot be read."""
+
+
 def _xml_name(tag: str) -> tuple[Optional[str], str]:
     """Return an ElementTree tag's namespace URI and local name."""
     if tag.startswith("{") and "}" in tag:
@@ -399,9 +408,10 @@ def _relationship_id(element: Any) -> Optional[str]:
 def _word_related_text_targets(zf: zipfile.ZipFile, document_root: Any) -> list[str]:
     """Return active Word text parts using OPC relationships, not filenames."""
     try:
-        relationships_root = ET.fromstring(zf.read("word/_rels/document.xml.rels"))
-    except (KeyError, ET.ParseError, DefusedXmlException):
+        relationships_xml = zf.read("word/_rels/document.xml.rels")
+    except KeyError:
         return []
+    relationships_root = ET.fromstring(relationships_xml)
 
     relationships: list[tuple[str, str, str]] = []
     relationships_by_id: dict[str, tuple[str, str]] = {}
@@ -526,261 +536,196 @@ def _alternate_content_skip_set(
     return skip
 
 
+def _read_part(zf: zipfile.ZipFile, name: str) -> bytes:
+    """Read a ZIP member the file cannot be valid without."""
+    try:
+        return zf.read(name)
+    except KeyError as e:
+        raise OfficeXmlExtractionError(f"missing required part: {name}") from e
+
+
+def _read_shared_strings(zf: zipfile.ZipFile) -> Optional[List[str]]:
+    """Return workbook shared strings, or None when the part is absent."""
+    try:
+        shared_strings_xml = zf.read("xl/sharedStrings.xml")
+    except KeyError:
+        return None
+    root = ET.fromstring(shared_strings_xml)
+    return [
+        "".join(t.text or "" for t in si.findall(f".//{{{_EXCEL_MAIN_NAMESPACE}}}t"))
+        for si in root.findall(f"{{{_EXCEL_MAIN_NAMESPACE}}}si")
+    ]
+
+
+def _shared_string(shared_strings: Optional[List[str]], value: str, member: str) -> str:
+    """Resolve a t="s" cell value, rejecting references the workbook cannot satisfy."""
+    if shared_strings is None:
+        raise OfficeXmlExtractionError(
+            f"{member} references shared strings but xl/sharedStrings.xml is missing"
+        )
+    try:
+        index = int(value)
+    except ValueError as e:
+        raise OfficeXmlExtractionError(
+            f"non-integer shared string index {value!r} in {member}"
+        ) from e
+    if not 0 <= index < len(shared_strings):
+        raise OfficeXmlExtractionError(
+            f"shared string index {index} out of range in {member}"
+        )
+    return shared_strings[index]
+
+
+def _spreadsheet_texts(
+    xml_root: Any, shared_strings: Optional[List[str]], member: str
+) -> List[str]:
+    """Return cell values from one worksheet in document order."""
+    texts: List[str] = []
+    for cell in xml_root.iter(f"{{{_EXCEL_MAIN_NAMESPACE}}}c"):
+        value = cell.find(f"{{{_EXCEL_MAIN_NAMESPACE}}}v")
+        if value is None or value.text is None:
+            continue
+        if cell.get("t") == "s":
+            texts.append(_shared_string(shared_strings, value.text, member))
+        else:
+            texts.append(value.text)
+    return texts
+
+
+def _paragraph_texts(
+    xml_root: Any, choice_namespaces: dict[Any, dict[str, str]]
+) -> List[str]:
+    """Return one line per Word/PowerPoint paragraph.
+
+    Runs concatenate without a separator because Word splits tokens across runs.
+    A nested text-box paragraph flushes its outer paragraph so XML order holds
+    without emitting the nested text twice.
+    """
+    parents = {child: parent for parent in xml_root.iter() for child in parent}
+
+    def line_owner(node: Any) -> Any:
+        """Closest paragraph ancestor, else nearest non-run container."""
+        cur = parents.get(node)
+        nearest_non_run = None
+        while cur is not None:
+            local_name = _xml_name(cur.tag)[1]
+            if local_name == "p":
+                return cur
+            if nearest_non_run is None and local_name != "r":
+                nearest_non_run = cur
+            cur = parents.get(cur)
+        return nearest_non_run
+
+    def parent_name(node: Any) -> Optional[str]:
+        parent = parents.get(node)
+        return None if parent is None else _xml_name(parent.tag)[1]
+
+    skip = _alternate_content_skip_set(xml_root, choice_namespaces)
+    lines: List[str] = []
+    current_owner = None
+    current_parts: List[str] = []
+
+    def flush_line() -> None:
+        # Strip space padding only; explicit tabs and breaks are content.
+        line = "".join(current_parts).strip(" ")
+        if line:
+            lines.append(line)
+
+    for node in xml_root.iter():
+        if id(node) in skip:
+            continue
+        namespace, local_name = _xml_name(node.tag)
+        piece = None
+        if local_name == "t" and node.text:
+            piece = node.text
+        elif namespace in _WORDPROCESSINGML_NAMESPACES and local_name in {
+            "tab",
+            "br",
+            "cr",
+        }:
+            # w:tab under w:pPr/w:tabs is a tab stop, not content.
+            if parent_name(node) == "r":
+                piece = "\t" if local_name == "tab" else "\n"
+        elif namespace in _DRAWINGML_NAMESPACES and local_name == "br":
+            if parent_name(node) == "p":
+                piece = "\n"
+        if piece is None:
+            continue
+        owner = line_owner(node) or node
+        if current_owner is not None and owner is not current_owner:
+            flush_line()
+            current_parts = []
+        current_owner = owner
+        current_parts.append(piece)
+
+    flush_line()
+    return lines
+
+
 def extract_office_xml_text(file_bytes: bytes, mime_type: str) -> Optional[str]:
     """
     Very light-weight XML scraper for Word, Excel, PowerPoint files.
-    Returns plain-text if something readable is found, else None.
+    Returns plain text, None when no text is present, and raises
+    OfficeXmlExtractionError when the Office file cannot be read.
     Uses zipfile + defusedxml.ElementTree.
     """
-    shared_strings: List[str] = []
-    ns_excel_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    if mime_type not in _OFFICE_XML_MIME_TYPES:
+        return None
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-            targets: List[str] = []
             parsed_members: dict[str, tuple[Any, dict[Any, dict[str, str]]]] = {}
-            # Map MIME → iterable of XML files to inspect
-            if (
-                mime_type
-                == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            ):
+            shared_strings: Optional[List[str]] = None
+            if mime_type == _DOCX_MIME:
+                document = _parse_xml_with_choice_namespaces(
+                    _read_part(zf, "word/document.xml")
+                )
+                parsed_members["word/document.xml"] = document
                 targets = ["word/document.xml"]
-                try:
-                    document_content = zf.read("word/document.xml")
-                except KeyError:
-                    # The normal member-processing path below owns reporting a
-                    # missing main part.
-                    pass
-                else:
-                    document_root, choice_namespaces = (
-                        _parse_xml_with_choice_namespaces(document_content)
-                    )
-                    parsed_members["word/document.xml"] = (
-                        document_root,
-                        choice_namespaces,
-                    )
-                    targets.extend(_word_related_text_targets(zf, document_root))
-            elif (
-                mime_type
-                == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            ):
+                targets.extend(_word_related_text_targets(zf, document[0]))
+            elif mime_type == _PPTX_MIME:
+                ET.fromstring(_read_part(zf, "ppt/presentation.xml"))
                 targets = [n for n in zf.namelist() if n.startswith("ppt/slides/slide")]
-            elif (
-                mime_type
-                == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ):
+            else:
+                ET.fromstring(_read_part(zf, "xl/workbook.xml"))
                 targets = [
                     n
                     for n in zf.namelist()
                     if n.startswith("xl/worksheets/sheet") and "drawing" not in n
                 ]
-                # Attempt to parse sharedStrings.xml for Excel files
-                try:
-                    shared_strings_xml = zf.read("xl/sharedStrings.xml")
-                    shared_strings_root = ET.fromstring(shared_strings_xml)
-                    for si_element in shared_strings_root.findall(
-                        f"{{{ns_excel_main}}}si"
-                    ):
-                        text_parts = []
-                        # Find all <t> elements, simple or within <r> runs, and concatenate their text
-                        for t_element in si_element.findall(f".//{{{ns_excel_main}}}t"):
-                            if t_element.text:
-                                text_parts.append(t_element.text)
-                        shared_strings.append("".join(text_parts))
-                except KeyError:
-                    logger.info(
-                        "No sharedStrings.xml found in Excel file (this is optional)."
-                    )
-                except ET.ParseError as e:
-                    logger.error(f"Error parsing sharedStrings.xml: {e}")
-                except (
-                    Exception
-                ) as e:  # Catch any other unexpected error during sharedStrings parsing
-                    logger.error(
-                        f"Unexpected error processing sharedStrings.xml: {e}",
-                        exc_info=True,
-                    )
-            else:
-                return None
+                shared_strings = _read_shared_strings(zf)
 
             pieces: List[str] = []
             for member in targets:
-                try:
-                    if member in parsed_members:
-                        xml_root, choice_namespaces = parsed_members[member]
-                    else:
-                        xml_content = zf.read(member)
-                        if (
-                            mime_type
-                            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        ):
-                            xml_root = ET.fromstring(xml_content)
-                            choice_namespaces = {}
-                        else:
-                            xml_root, choice_namespaces = (
-                                _parse_xml_with_choice_namespaces(xml_content)
-                            )
-                    member_texts: List[str] = []
+                if mime_type == _XLSX_MIME:
+                    xml_root = ET.fromstring(_read_part(zf, member))
+                    member_texts = _spreadsheet_texts(xml_root, shared_strings, member)
+                    sep = " "
+                else:
+                    xml_root, choice_namespaces = parsed_members.get(
+                        member
+                    ) or _parse_xml_with_choice_namespaces(_read_part(zf, member))
+                    member_texts = _paragraph_texts(xml_root, choice_namespaces)
+                    # Paragraph boundaries carry meaning; keep them as newlines.
+                    sep = "\n"
+                if member_texts:
+                    pieces.append(sep.join(member_texts))
 
-                    if (
-                        mime_type
-                        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    ):
-                        for cell_element in xml_root.findall(
-                            f".//{{{ns_excel_main}}}c"
-                        ):  # Find all <c> elements
-                            value_element = cell_element.find(
-                                f"{{{ns_excel_main}}}v"
-                            )  # Find <v> under <c>
-
-                            # Skip if cell has no value element or value element has no text
-                            if value_element is None or value_element.text is None:
-                                continue
-
-                            cell_type = cell_element.get("t")
-                            if cell_type == "s":  # Shared string
-                                try:
-                                    ss_idx = int(value_element.text)
-                                    if 0 <= ss_idx < len(shared_strings):
-                                        member_texts.append(shared_strings[ss_idx])
-                                    else:
-                                        logger.warning(
-                                            f"Invalid shared string index {ss_idx} in {member}. Max index: {len(shared_strings) - 1}"
-                                        )
-                                except ValueError:
-                                    logger.warning(
-                                        f"Non-integer shared string index: '{value_element.text}' in {member}."
-                                    )
-                            else:  # Direct value (number, boolean, inline string if not 's')
-                                member_texts.append(value_element.text)
-                    else:  # Word or PowerPoint
-                        # Runs belonging to one paragraph concatenate without an
-                        # invented separator. Word routinely splits a token across
-                        # runs for formatting, spell-check state, and tracked
-                        # changes; real spacing is carried by the text itself.
-                        #
-                        # Nested text-box paragraphs interrupt their outer
-                        # paragraph. Flushing when the closest owner changes keeps
-                        # XML order without attributing the nested text twice.
-                        parents = {
-                            child: parent
-                            for parent in xml_root.iter()
-                            for child in parent
-                        }
-
-                        def _line_owner(node):
-                            """Closest paragraph ancestor, else nearest non-run container."""
-                            cur = parents.get(node)
-                            nearest_non_run = None
-                            while cur is not None:
-                                _, local_name = _xml_name(cur.tag)
-                                if local_name == "p":
-                                    return cur
-                                if nearest_non_run is None and local_name != "r":
-                                    nearest_non_run = cur
-                                cur = parents.get(cur)
-                            return nearest_non_run
-
-                        skip = _alternate_content_skip_set(xml_root, choice_namespaces)
-                        current_owner = None
-                        current_parts: list[str] = []
-
-                        def flush_line() -> None:
-                            if not current_parts:
-                                return
-                            # Text-space padding is normalized at paragraph
-                            # boundaries, but explicit tabs/breaks remain content.
-                            line = "".join(current_parts).strip(" ")
-                            if line:
-                                member_texts.append(line)
-
-                        for node in xml_root.iter():
-                            if id(node) in skip:
-                                continue
-                            namespace, local_name = _xml_name(node.tag)
-                            piece = None
-                            if local_name == "t" and node.text:
-                                piece = node.text
-                            elif namespace in _WORDPROCESSINGML_NAMESPACES and (
-                                local_name in {"tab", "br", "cr"}
-                            ):
-                                # A Word tab/break is content only directly under
-                                # w:r; w:tab under w:pPr/w:tabs is a tab stop.
-                                parent = parents.get(node)
-                                if (
-                                    parent is not None
-                                    and _xml_name(parent.tag)[1] == "r"
-                                ):
-                                    piece = "\t" if local_name == "tab" else "\n"
-                            elif (
-                                namespace in _DRAWINGML_NAMESPACES
-                                and local_name == "br"
-                            ):
-                                # DrawingML a:br is a direct a:p child between
-                                # runs, unlike Word's w:br-under-w:r structure.
-                                parent = parents.get(node)
-                                if (
-                                    parent is not None
-                                    and _xml_name(parent.tag)[1] == "p"
-                                ):
-                                    piece = "\n"
-                            if piece is None:
-                                continue
-                            owner = _line_owner(node)
-                            if owner is None:
-                                owner = node
-                            if current_owner is not None and owner is not current_owner:
-                                flush_line()
-                                current_parts = []
-                            current_owner = owner
-                            current_parts.append(piece)
-
-                        flush_line()
-
-                    if member_texts:
-                        # Word/PowerPoint entries are one paragraph each, so join
-                        # them with newlines: paragraph boundaries carry meaning,
-                        # and collapsing them runs headings into body text.
-                        # Spreadsheet entries stay space-joined as before.
-                        sep = (
-                            " "
-                            if mime_type
-                            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            else "\n"
-                        )
-                        pieces.append(sep.join(member_texts))
-
-                except ET.ParseError as e:
-                    logger.warning(
-                        f"Could not parse XML in member '{member}' for {mime_type} file: {e}"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error processing member '{member}' for {mime_type}: {e}",
-                        exc_info=True,
-                    )
-                    # continue processing other members
-
-            if not pieces:  # If no text was extracted at all
-                return None
-
-            # Join content from different members (sheets/slides) with double newlines for separation
             text = "\n\n".join(pieces).strip(" ")
-            return text or None  # Ensure None is returned if text is empty after strip
+            return text or None
 
-    except zipfile.BadZipFile:
+    except zipfile.BadZipFile as e:
         logger.warning(f"File is not a valid ZIP archive (mime_type: {mime_type}).")
-        return None
-    except (
-        ET.ParseError
-    ) as e:  # Catch parsing errors at the top level if zipfile itself is XML-like
-        logger.error(f"XML parsing error at a high level for {mime_type}: {e}")
-        return None
+        raise OfficeXmlExtractionError("not a valid Office file") from e
+    except (ET.ParseError, DefusedXmlException) as e:
+        raise OfficeXmlExtractionError("could not parse Office XML") from e
+    except OfficeXmlExtractionError:
+        raise
     except Exception as e:
         logger.error(
             f"Failed to extract office XML text for {mime_type}: {e}", exc_info=True
         )
-        return None
+        raise OfficeXmlExtractionError("could not read Office file") from e
 
 
 IMAGE_MIME_TYPES = {
