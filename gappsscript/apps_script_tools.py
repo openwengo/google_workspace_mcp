@@ -496,6 +496,7 @@ async def _run_script_function_impl(
     function_name: str,
     parameters: Optional[list[object]] = None,
     dev_mode: bool = False,
+    deployment_id: Optional[str] = None,
 ) -> str:
     """Internal implementation for run_script_function."""
     logger.info(
@@ -508,8 +509,53 @@ async def _run_script_function_impl(
         request_body["parameters"] = parameters
 
     try:
+        if not deployment_id:
+            all_deployments = []
+            page_token = None
+            while True:
+                list_params = {"scriptId": script_id}
+                if page_token:
+                    list_params["pageToken"] = page_token
+
+                deployments_response = await asyncio.to_thread(
+                    service.projects().deployments().list(**list_params).execute
+                )
+                all_deployments.extend(deployments_response.get("deployments", []))
+                page_token = deployments_response.get("nextPageToken")
+                if not page_token:
+                    break
+
+            deployments = [
+                deployment
+                for deployment in all_deployments
+                if deployment.get("deploymentId")
+                and deployment.get("deploymentConfig", {}).get("versionNumber")
+                is not None
+                and any(
+                    entry_point.get("entryPointType") == "EXECUTION_API"
+                    for entry_point in deployment.get("entryPoints", [])
+                )
+            ]
+
+            if not deployments:
+                return (
+                    "Execution failed\n"
+                    f"Function: {function_name}\n"
+                    "Error: No versioned API Executable deployment was found. In the "
+                    "Apps Script editor, use Deploy > New deployment > API Executable. "
+                    "The script and caller must share a standard Google Cloud project. "
+                    "manage_deployment(action='create') is sufficient only when the "
+                    "script manifest already defines executionApi."
+                )
+
+            latest = max(
+                deployments,
+                key=lambda deployment: deployment["deploymentConfig"]["versionNumber"],
+            )
+            deployment_id = latest["deploymentId"]
+
         response = await asyncio.to_thread(
-            service.scripts().run(scriptId=script_id, body=request_body).execute
+            service.scripts().run(scriptId=deployment_id, body=request_body).execute
         )
 
         if "error" in response:
@@ -544,7 +590,7 @@ async def _run_script_function_impl(
     ),
 )
 @handle_http_errors("run_script_function", service_type="script")
-@require_google_service("script", "script_run")
+@require_google_service("script", ["script_run", "script_deployments_readonly"])
 async def run_script_function(
     service: Any,
     user_google_email: str,
@@ -552,6 +598,7 @@ async def run_script_function(
     function_name: str,
     parameters: Optional[ObjectList] = None,
     dev_mode: bool = False,
+    deployment_id: Optional[str] = None,
 ) -> str:
     """
     Executes a function in a deployed script.
@@ -563,12 +610,21 @@ async def run_script_function(
         function_name: Name of function to execute
         parameters: Optional list of parameters to pass
         dev_mode: Whether to run latest code vs deployed version
+        deployment_id: Optional API Executable deployment ID. When supplied,
+            skips the automatic deployment lookup. When omitted, the versioned
+            API Executable deployment with the highest version number is used.
 
     Returns:
         str: Formatted string with execution result or error
     """
     return await _run_script_function_impl(
-        service, user_google_email, script_id, function_name, parameters, dev_mode
+        service,
+        user_google_email,
+        script_id,
+        function_name,
+        parameters,
+        dev_mode,
+        deployment_id,
     )
 
 
