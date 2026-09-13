@@ -217,6 +217,16 @@ def create_comment_tools(app_name: str, file_id_param: str):
     }
 
 
+def _format_field(label: str, value: str) -> str:
+    """Render a labeled value with continuation lines indented under the value.
+
+    Comment text is free-form and may contain newlines; without the hanging
+    indent a line such as "Author: ..." inside a comment body would be
+    indistinguishable from a real field.
+    """
+    return label + ("\n" + " " * len(label)).join(value.splitlines())
+
+
 async def _read_comments_impl(
     service, app_name: str, file_id: str, max_comments: int | None = None
 ) -> str:
@@ -278,8 +288,8 @@ async def _read_comments_impl(
         output.append(f"Author: {author}")
         output.append(f"Created: {created}{status}")
         if quoted_text:
-            output.append(f"Quoted text: {quoted_text}")
-        output.append(f"Content: {content}")
+            output.append(_format_field("Quoted text: ", quoted_text))
+        output.append(_format_field("Content: ", content))
 
         replies = comment.get("replies", [])
         if replies:
@@ -292,7 +302,7 @@ async def _read_comments_impl(
                 output.append(f"    Reply ID: {reply_id}")
                 output.append(f"    Author: {reply_author}")
                 output.append(f"    Created: {reply_created}")
-                output.append(f"    Content: {reply_content}")
+                output.append(_format_field("    Content: ", reply_content))
 
         output.append("")  # Empty line between comments
 
@@ -326,7 +336,7 @@ async def _create_comment_impl(
     author = comment.get("author", {}).get("displayName", "Unknown")
     created = comment.get("createdTime", "")
 
-    return f"Comment created successfully!\nComment ID: {comment_id}\nAuthor: {author}\nCreated: {created}\nContent: {comment_content}"
+    return f"Comment created successfully!\nComment ID: {comment_id}\nAuthor: {author}\nCreated: {created}\n{_format_field('Content: ', comment_content)}"
 
 
 async def _reply_to_comment_impl(
@@ -354,7 +364,7 @@ async def _reply_to_comment_impl(
     author = reply.get("author", {}).get("displayName", "Unknown")
     created = reply.get("createdTime", "")
 
-    return f"Reply posted successfully!\nReply ID: {reply_id}\nAuthor: {author}\nCreated: {created}\nContent: {reply_content}"
+    return f"Reply posted successfully!\nReply ID: {reply_id}\nAuthor: {author}\nCreated: {created}\n{_format_field('Content: ', reply_content)}"
 
 
 async def _resolve_comment_impl(
