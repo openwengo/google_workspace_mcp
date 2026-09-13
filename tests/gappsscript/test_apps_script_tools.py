@@ -453,35 +453,43 @@ async def test_run_script_function_uses_only_api_executable_deployment():
 
 
 @pytest.mark.asyncio
-async def test_run_script_function_requires_id_for_multiple_api_deployments():
-    """Automatic discovery must not guess between runnable deployments."""
+async def test_run_script_function_selects_highest_version_deployment():
+    """Automatic discovery picks the API deployment with the highest version."""
     mock_service = Mock()
     mock_service.projects().deployments().list().execute.return_value = {
         "deployments": [
             {
-                "deploymentId": "production",
+                "deploymentId": "older",
                 "deploymentConfig": {"versionNumber": 4},
                 "entryPoints": [{"entryPointType": "EXECUTION_API"}],
             },
             {
-                "deploymentId": "staging",
+                "deploymentId": "newest",
+                "deploymentConfig": {"versionNumber": 7},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+            {
+                "deploymentId": "middle",
                 "deploymentConfig": {"versionNumber": 5},
                 "entryPoints": [{"entryPointType": "EXECUTION_API"}],
             },
         ]
     }
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
 
-    result = await _run_script_function_impl(
+    await _run_script_function_impl(
         service=mock_service,
         user_google_email="test@example.com",
         script_id="test123",
         function_name="myFunction",
     )
 
-    assert "Multiple API Executable deployments were found" in result
-    assert "production (version 4)" in result
-    assert "staging (version 5)" in result
-    mock_service.scripts().run.assert_not_called()
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="newest",
+        body={"function": "myFunction", "devMode": False},
+    )
 
 
 @pytest.mark.asyncio

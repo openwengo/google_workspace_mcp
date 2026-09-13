@@ -548,31 +548,11 @@ async def _run_script_function_impl(
                     "script manifest already defines executionApi."
                 )
 
-            if len(deployments) > 1:
-                candidates = sorted(
-                    deployments,
-                    key=lambda deployment: deployment["deploymentConfig"][
-                        "versionNumber"
-                    ],
-                    reverse=True,
-                )
-                candidate_lines = [
-                    "- "
-                    f"{deployment['deploymentId']} "
-                    f"(version {deployment['deploymentConfig']['versionNumber']})"
-                    for deployment in candidates
-                ]
-                return "\n".join(
-                    [
-                        "Execution failed",
-                        f"Function: {function_name}",
-                        "Error: Multiple API Executable deployments were found. "
-                        "Pass deployment_id explicitly:",
-                        *candidate_lines,
-                    ]
-                )
-
-            deployment_id = deployments[0]["deploymentId"]
+            latest = max(
+                deployments,
+                key=lambda deployment: deployment["deploymentConfig"]["versionNumber"],
+            )
+            deployment_id = latest["deploymentId"]
 
         response = await asyncio.to_thread(
             service.scripts().run(scriptId=deployment_id, body=request_body).execute
@@ -631,8 +611,8 @@ async def run_script_function(
         parameters: Optional list of parameters to pass
         dev_mode: Whether to run latest code vs deployed version
         deployment_id: Optional API Executable deployment ID. When supplied,
-            skips the automatic deployment lookup. Required when the project has
-            more than one versioned API Executable deployment.
+            skips the automatic deployment lookup. When omitted, the versioned
+            API Executable deployment with the highest version number is used.
 
     Returns:
         str: Formatted string with execution result or error
