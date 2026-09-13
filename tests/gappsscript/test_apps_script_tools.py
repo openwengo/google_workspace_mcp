@@ -641,6 +641,27 @@ async def test_list_script_processes():
 
 
 @pytest.mark.asyncio
+async def test_list_script_processes_with_script_id():
+    """script_id must be forwarded as the nested userProcessFilter.scriptId
+    query param, not a top-level scriptId kwarg (regression for the
+    'unexpected keyword argument scriptId' TypeError)."""
+    mock_service = Mock()
+    mock_service.processes().list().execute.return_value = {"processes": []}
+
+    await _list_script_processes_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        page_size=25,
+        script_id="test123",
+    )
+
+    _, call_kwargs = mock_service.processes().list.call_args
+    assert call_kwargs.get("userProcessFilter.scriptId") == "test123"
+    assert call_kwargs.get("pageSize") == 25
+    assert "scriptId" not in call_kwargs
+
+
+@pytest.mark.asyncio
 async def test_delete_script_project():
     """Test deleting a script project"""
     mock_service = Mock()

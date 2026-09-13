@@ -864,7 +864,10 @@ async def _list_script_processes_impl(
 
     request_params = {"pageSize": page_size}
     if script_id:
-        request_params["scriptId"] = script_id
+        # processes.list() takes the script ID under the nested
+        # userProcessFilter.scriptId query param, not a top-level scriptId
+        # kwarg (which raises "unexpected keyword argument scriptId").
+        request_params["userProcessFilter.scriptId"] = script_id
 
     response = await asyncio.to_thread(
         service.processes().list(**request_params).execute
