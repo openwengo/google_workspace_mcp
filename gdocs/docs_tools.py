@@ -346,20 +346,15 @@ async def get_doc_content(
         except FileTooLargeError as e:
             return str(e)
 
-        office_text = None
-        unreadable = None
         try:
             office_text = extract_office_xml_text(file_content_bytes, mime_type)
         except OfficeXmlExtractionError as e:
-            # A damaged file must not be reported as an unsupported encoding.
-            unreadable = (
+            office_text = (
                 f"[Could not read '{mime_type}' file - it appears damaged or is "
                 f"not a valid Office document: {e}]"
             )
         if office_text:
             body_text = office_text
-        elif unreadable:
-            body_text = unreadable
         else:
             try:
                 body_text = file_content_bytes.decode("utf-8")

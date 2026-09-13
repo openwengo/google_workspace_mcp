@@ -136,6 +136,26 @@ async def test_get_drive_file_content_pdf_empty(mock_resolve):
     assert "get_drive_file_download_url" in result
 
 
+@pytest.mark.asyncio
+async def test_get_drive_file_content_reports_invalid_docx(mock_resolve):
+    mime_type = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    mock_resolve.return_value[1]["mimeType"] = mime_type
+    mock_service = Mock()
+    mock_service.files().get_media.return_value = "req"
+
+    with _patch_downloader(b"not a zip"):
+        result = await _unwrap(get_drive_file_content)(
+            service=mock_service,
+            user_google_email="user@example.com",
+            file_id="file123",
+        )
+
+    assert "appears damaged" in result
+    assert "unsupported text encoding" not in result
+
+
 # ---------------------------------------------------------------------------
 # Image tests
 # ---------------------------------------------------------------------------
