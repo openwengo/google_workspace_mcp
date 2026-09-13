@@ -98,18 +98,12 @@ _STRUCTURE_CONTENT_FIELDS = (
     "tableOfContents"
     ")"
 )
-# The request always sets includeTabsContent=True (every Google Doc is tab-backed
-# now, even single-tab ones), and the API leaves the legacy top-level body/headers/
-# footers empty in that mode. Requesting them in the field mask alongside tabs(...)
-# is rejected outright with "Field mask may not contain legacy text-level Document
-# resource fields while requesting tabs content" (issue #1108), so they're omitted
-# here; title/documentStyle/namedRanges are harmless document-level metadata, not
-# text-level content, and stay for the no-tabs fallback path below.
 # headers/footers are maps and childTabs is recursive, so neither is sub-masked:
 # both stay whole, which costs little and cannot silently drop content.
+# With includeTabsContent=True the API rejects legacy top-level text fields in
+# the mask (issue #1108), so everything but the title is read from tabs.
 _STRUCTURE_FIELDS = (
-    f"title,documentStyle,namedRanges,"
-    f"tabs(tabProperties,childTabs,documentTab("
+    f"title,tabs(tabProperties,childTabs,documentTab("
     f"documentStyle,namedRanges,headers,footers,body({_STRUCTURE_CONTENT_FIELDS})))"
 )
 

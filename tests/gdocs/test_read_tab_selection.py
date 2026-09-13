@@ -160,7 +160,7 @@ async def test_inspect_doc_structure_field_mask_omits_legacy_top_level_content()
     "Field mask may not contain legacy text-level Document resource fields
     while requesting tabs content". Since the call always sets
     includeTabsContent=True and Google leaves those legacy fields empty
-    anyway in that mode, the mask must not request them at the top level —
+    anyway in that mode, the mask must not request them at the top level,
     only within the tabs(...) branch.
     """
     service = _docs_service({"body": {"content": []}})
@@ -176,7 +176,7 @@ async def test_inspect_doc_structure_field_mask_omits_legacy_top_level_content()
 
     fields = call_kwargs["fields"]
     top_level_fields = fields.split("tabs(", 1)[0]
-    for legacy_field in ("body(", "headers", "footers"):
+    for legacy_field in ("body(", "headers", "footers", "documentStyle", "namedRanges"):
         assert legacy_field not in top_level_fields, (
             f"{legacy_field!r} must not appear at the top level of the field "
             f"mask alongside tabs(...): {fields!r}"
