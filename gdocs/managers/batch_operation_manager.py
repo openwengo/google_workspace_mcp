@@ -164,7 +164,7 @@ class BatchOperationManager:
                     .get(
                         documentId=document_id,
                         includeTabsContent=True,
-                        fields="revisionId,tabs,body,headers,footers,footnotes",
+                        fields="revisionId,tabs",
                     )
                     .execute
                 )
