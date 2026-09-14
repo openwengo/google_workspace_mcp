@@ -809,6 +809,14 @@ def html_to_text_preserving_breaks(html_content: str) -> str:
 
 _HTML_BLOCK_TAGS = frozenset(
     {
+        "address",
+        "aside",
+        "fieldset",
+        "figure",
+        "footer",
+        "header",
+        "main",
+        "nav",
         "p",
         "div",
         "br",

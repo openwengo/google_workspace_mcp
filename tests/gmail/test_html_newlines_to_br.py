@@ -39,6 +39,14 @@ class TestHtmlNewlinesToBr:
         )
         assert html_newlines_to_br(body) == body
 
+    @pytest.mark.parametrize(
+        "tag",
+        ["address", "aside", "fieldset", "figure", "footer", "header", "main", "nav"],
+    )
+    def test_semantic_block_elements_are_untouched(self, tag):
+        body = f"<{tag}>content</{tag}>\nnext"
+        assert html_newlines_to_br(body) == body
+
     def test_compact_html_is_untouched(self):
         body = "<p>Hi</p><p>Bye</p>"
         assert html_newlines_to_br(body) == body
