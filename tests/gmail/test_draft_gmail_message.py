@@ -887,6 +887,40 @@ async def test_draft_gmail_message_fetches_thread_once_when_quoting_reply():
 
 
 @pytest.mark.asyncio
+async def test_draft_gmail_message_html_newlines_convert_body_not_quoted_original():
+    original_html = "<div>\n<span>Hello</span>\n<span>world</span>\n</div>"
+    mock_service = _mock_gmail_service()
+    mock_service.users().drafts().create().execute.return_value = {"id": "draft_reply"}
+    mock_service.users().threads().get().execute.return_value = {
+        "messages": [_thread_message("<msg1@example.com>", html=original_html)]
+    }
+
+    await _unwrap(draft_gmail_message)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        to="recipient@example.com",
+        subject="Meeting tomorrow",
+        body="Thanks,\n\nsee you there",
+        body_format="html",
+        thread_id="thread123",
+        quote_original=True,
+        include_signature=False,
+    )
+
+    create_kwargs = (
+        mock_service.users.return_value.drafts.return_value.create.call_args.kwargs
+    )
+    parsed = _parse_raw_message(create_kwargs["body"]["message"]["raw"])
+    # SMTP policy emits CRLF; compare against the LF the caller passed.
+    html_body = (
+        parsed.get_body(preferencelist=("html",)).get_content().replace("\r\n", "\n")
+    )
+
+    assert html_body.startswith("Thanks,<br><br>\nsee you there")
+    assert original_html in html_body
+
+
+@pytest.mark.asyncio
 async def test_draft_gmail_message_autofills_reply_headers_from_thread():
     mock_service = _mock_gmail_service()
     mock_service.users().drafts().create().execute.return_value = {"id": "draft_reply"}

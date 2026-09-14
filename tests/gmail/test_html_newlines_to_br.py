@@ -6,7 +6,7 @@ from email.policy import SMTP
 
 import pytest
 
-from gmail.gmail_helpers import html_newlines_to_br
+from gmail.gmail_helpers import _build_forward_content, html_newlines_to_br
 from gmail.gmail_tools import _prepare_gmail_message
 
 SIGNATURE_HTML = (
@@ -60,9 +60,61 @@ class TestHtmlNewlinesToBr:
     def test_runs_of_newlines_cap_at_two_breaks(self):
         assert html_newlines_to_br("a\n\n\n\nb") == "a<br><br>\nb"
 
-    def test_pre_blocks_are_never_touched(self):
-        body = "<p>Log:</p>\n<pre>line 1\nline 2</pre>\nafter\nmore"
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "<p>Log:</p>\n<pre>line 1\nline 2</pre>\nafter\nmore",
+            "<style>\na{color:red}\nb{color:blue}\n</style>\ntext\nmore",
+            "<script>\nlet a = 1;\nlet b = 2;\n</script>\ntext\nmore",
+            "<TEXTAREA>one\ntwo</TEXTAREA>",
+        ],
+    )
+    def test_raw_text_elements_are_never_touched(self, body):
         assert html_newlines_to_br(body) == body
+
+    def test_pre_prefixed_tag_name_does_not_disable_conversion(self):
+        assert html_newlines_to_br("<preview>a</preview>\nb") == (
+            "<preview>a</preview><br>\nb"
+        )
+
+    def test_head_markup_is_untouched(self):
+        body = (
+            "<html>\n<head>\n<meta charset='utf-8'>\n<title>T</title>\n"
+            "<link rel='x'>\n</head>\n<body>\n<p>Hi</p>\n</body>\n</html>"
+        )
+        assert html_newlines_to_br(body) == body
+
+    def test_indentation_between_tags_is_formatting(self):
+        body = "<div>\n  <span>a</span>\n  <span>b</span>\n</div>"
+        assert html_newlines_to_br(body) == body
+
+    def test_indented_text_still_gets_breaks(self):
+        assert html_newlines_to_br("Items:\n  one\n  two") == (
+            "Items:<br>\n  one<br>\n  two"
+        )
+
+    def test_newlines_just_inside_inline_element_are_formatting(self):
+        body = '<td>\n<a href="x">\n<img src="y">\n</a>\n</td>'
+        assert html_newlines_to_br(body) == body
+
+    def test_newline_after_void_inline_tag_still_breaks(self):
+        assert html_newlines_to_br("<img src='y'>\nCaption") == (
+            "<img src='y'><br>\nCaption"
+        )
+
+    def test_leading_and_trailing_newlines_are_formatting(self):
+        assert html_newlines_to_br("\nHi\n\nThanks\n") == "\nHi<br><br>\nThanks\n"
+
+    def test_gt_inside_quoted_attribute_does_not_split_tag(self):
+        body = "<p title=\"a>b\">\nx</p>\n<p data-x='1>0'>\ny</p>"
+        assert html_newlines_to_br(body) == body
+
+    def test_crlf_runs_cap_at_two_breaks(self):
+        assert html_newlines_to_br("a\r\n\r\n\r\nb") == "a<br><br>\nb"
+
+    def test_is_idempotent(self):
+        once = html_newlines_to_br("Hi,\n\nline\nend")
+        assert html_newlines_to_br(once) == once
 
     @pytest.mark.parametrize("body", ["", "no newlines here", "<p>one</p>"])
     def test_noop_inputs(self, body):
@@ -70,25 +122,10 @@ class TestHtmlNewlinesToBr:
 
 
 class TestPrepareGmailMessageNewlines:
-    def test_html_body_with_bare_newlines_renders_breaks(self):
-        raw_b64, _, _, _ = _prepare_gmail_message(
-            subject="Test",
-            body="Hi Jane,\n\nFirst paragraph.\nSecond line.",
-            to="jane@example.com",
-            body_format="html",
-        )
-        parts = _decode_parts(raw_b64)
-        assert (
-            parts["text/html"].strip()
-            == "Hi Jane,<br><br>\nFirst paragraph.<br>\nSecond line."
-        )
-        # The text/plain alternative keeps the breaks as real newlines.
-        assert (
-            parts["text/plain"].strip() == "Hi Jane,\n\nFirst paragraph.\nSecond line."
-        )
-
-    def test_well_formed_html_body_is_unchanged(self):
-        body = "<p>Hi Jane,</p>\n<p>Thanks.</p>"
+    def test_html_body_is_not_rewritten(self):
+        # Conversion happens on the caller's body before composition, so a
+        # composed body carrying third-party markup reaches MIME untouched.
+        body = "<div>\n<span>Hello</span>\n<span>world</span>\n</div>"
         raw_b64, _, _, _ = _prepare_gmail_message(
             subject="Test", body=body, to="jane@example.com", body_format="html"
         )
@@ -102,3 +139,18 @@ class TestPrepareGmailMessageNewlines:
         parts = _decode_parts(raw_b64)
         assert "text/html" not in parts
         assert parts["text/plain"].strip() == body
+
+
+class TestForwardNoteNewlines:
+    def test_html_note_converted_but_original_untouched(self):
+        original_html = "<div>\n<span>Hello</span>\n<span>world</span>\n</div>"
+        _, body, body_format = _build_forward_content(
+            headers={},
+            bodies={"html": original_html, "text": ""},
+            forward_message="FYI\n\nsee below",
+            forward_message_format="html",
+            subject_override=None,
+        )
+        assert body_format == "html"
+        assert "<div>FYI<br><br>\nsee below</div>" in body
+        assert original_html in body

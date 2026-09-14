@@ -1281,9 +1281,6 @@ def _prepare_gmail_message(
         message["References"] = references
 
     if normalized_format == "html":
-        # Bare newlines between text are invisible to HTML renderers; callers
-        # (LLMs especially) pass them all the time expecting line breaks.
-        body = html_newlines_to_br(body)
         # Include a text/plain fallback so reply drafts and recipients don't
         # depend on clients successfully parsing HTML-only bodies. This is what
         # a non-HTML client actually displays, so block boundaries have to
@@ -2770,6 +2767,12 @@ async def send_gmail_message(
             service, from_email=sender_email
         )
 
+    if body_format == "html":
+        # Bare newlines between text are invisible to HTML renderers; callers
+        # (LLMs especially) pass them expecting line breaks. Convert only the
+        # caller's body, before any signature or quoted original is attached.
+        body = html_newlines_to_br(body)
+
     if quote_original and target_reply:
         send_body_content = _build_quoted_reply_body(
             body,
@@ -3186,7 +3189,9 @@ async def draft_gmail_message(
             from_email=from_email,
             fallback_email=user_google_email,
         )
-    draft_body = body
+    # Convert only the caller's body, before any signature or quoted original
+    # is attached; see send_gmail_message.
+    draft_body = html_newlines_to_br(body) if body_format == "html" else body
     signature_html = resolved_signature_html if include_signature else ""
 
     reply_context = None

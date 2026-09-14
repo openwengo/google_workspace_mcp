@@ -639,7 +639,7 @@ def _build_forward_content(
         note_html = ""
         if forward_message:
             if forward_message_format == "html":
-                note_html = f"<div>{forward_message}</div><br/>"
+                note_html = f"<div>{html_newlines_to_br(forward_message)}</div><br/>"
             else:
                 escaped = html.escape(forward_message).replace("\n", "<br/>")
                 note_html = f"<div>{escaped}</div><br/>"
@@ -836,16 +836,25 @@ _HTML_BLOCK_TAGS = frozenset(
         "h6",
         "html",
         "head",
+        "title",
+        "meta",
+        "link",
         "body",
-        "style",
-        "script",
         "center",
         "section",
         "article",
     }
 )
-_HTML_TAG_RE = re.compile(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)[^>]*>")
-_NEWLINE_RUN_RE = re.compile(r"(\n+)")
+_HTML_VOID_TAGS = frozenset(
+    {"area", "br", "col", "embed", "hr", "img", "input", "link", "meta", "wbr"}
+)
+_HTML_TAG_RE = re.compile(
+    r"<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9]*)(?:\"[^\"]*\"|'[^']*'|[^'\">])*>"
+)
+# Elements whose contents are not rendered as flowing text; a <br> inside them
+# would corrupt CSS/JS or show up literally.
+_HTML_RAW_TEXT_RE = re.compile(r"<\s*(?:pre|style|script|textarea)\b", re.IGNORECASE)
+_NEWLINE_RUN_RE = re.compile(r"((?:\r?\n)+)")
 
 
 def html_newlines_to_br(html_body: str) -> str:
@@ -856,47 +865,58 @@ def html_newlines_to_br(html_body: str) -> str:
     the recipient gets one run-on paragraph. Only newlines that separate
     *content* (text or inline tags such as ``<b>``/``<a>``) become ``<br>``;
     newlines that merely sit next to a block-level tag (``<p>``, ``<li>``,
-    ``<div>``...) are formatting whitespace and are left alone, so a
+    ``<div>``...), just inside an inline element, before indentation, or at
+    either end of the body are formatting whitespace and are left alone, so a
     well-formed HTML body -- including an appended Gmail signature -- comes
-    back byte-identical. Bodies containing ``<pre>`` are never touched.
+    back byte-identical. Bodies containing ``<pre>``, ``<style>``, ``<script>``
+    or ``<textarea>`` are never touched.
+
+    Apply this only to caller-authored HTML, never to a composed body that
+    embeds third-party markup such as a quoted or forwarded message.
     """
     if not html_body or "\n" not in html_body:
         return html_body
-    if "<pre" in html_body.lower():
+    if _HTML_RAW_TEXT_RE.search(html_body):
         return html_body
 
+    # Each token is (is_tag, raw, edge_after, edge_before): whether whitespace
+    # right after / right before the tag is formatting rather than content.
     tokens: List[tuple] = []
     pos = 0
     for match in _HTML_TAG_RE.finditer(html_body):
         if match.start() > pos:
-            tokens.append(("text", html_body[pos : match.start()]))
-        tokens.append(("tag", match.group(0), match.group(1).lower()))
+            tokens.append((False, html_body[pos : match.start()], False, False))
+        closing, name = bool(match.group(1)), match.group(2).lower()
+        block = name in _HTML_BLOCK_TAGS
+        opens_inline = not closing and name not in _HTML_VOID_TAGS
+        tokens.append((True, match.group(0), block or opens_inline, block or closing))
         pos = match.end()
     if pos < len(html_body):
-        tokens.append(("text", html_body[pos:]))
-
-    def _is_block(index: int) -> bool:
-        token = tokens[index]
-        return token[0] == "tag" and token[2] in _HTML_BLOCK_TAGS
+        tokens.append((False, html_body[pos:], False, False))
 
     out: List[str] = []
-    for index, token in enumerate(tokens):
-        if token[0] == "tag":
-            out.append(token[1])
+    for index, (is_tag, text, _, _) in enumerate(tokens):
+        if is_tag:
+            out.append(text)
             continue
-        text = token[1]
-        prev_is_block = index > 0 and _is_block(index - 1)
-        next_is_block = index + 1 < len(tokens) and _is_block(index + 1)
+        prev_is_edge = index == 0 or tokens[index - 1][2]
+        next_is_edge = index + 1 == len(tokens) or tokens[index + 1][3]
         pieces = _NEWLINE_RUN_RE.split(text)
+        content = [i for i, piece in enumerate(pieces) if piece.strip()]
+        first_content = content[0] if content else len(pieces)
+        last_content = content[-1] if content else -1
         rebuilt: List[str] = []
         for piece_index, piece in enumerate(pieces):
-            if not piece.startswith("\n"):
+            # re.split with one capture group puts newline runs at odd indices.
+            if piece_index % 2 == 0:
                 rebuilt.append(piece)
                 continue
-            before = "".join(pieces[:piece_index]).strip()
-            after = "".join(pieces[piece_index + 1 :]).strip()
-            if (not before and prev_is_block) or (not after and next_is_block):
-                # Whitespace between block tags: formatting, not content.
+            indented = bool(pieces[piece_index + 1])
+            if (piece_index < first_content and prev_is_edge) or (
+                piece_index > last_content and (next_is_edge or indented)
+            ):
+                # Whitespace at a block or element edge, or indentation before
+                # the next tag: formatting, not content.
                 rebuilt.append(piece)
                 continue
             rebuilt.append("<br>" * min(piece.count("\n"), 2) + "\n")
