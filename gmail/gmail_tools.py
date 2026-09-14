@@ -77,6 +77,7 @@ from gmail.gmail_helpers import (
     _retryable_result_ids,
     _signature_html_to_text,
     build_label_color,
+    html_newlines_to_br,
     html_to_text_preserving_breaks,
 )
 
@@ -1280,6 +1281,9 @@ def _prepare_gmail_message(
         message["References"] = references
 
     if normalized_format == "html":
+        # Bare newlines between text are invisible to HTML renderers; callers
+        # (LLMs especially) pass them all the time expecting line breaks.
+        body = html_newlines_to_br(body)
         # Include a text/plain fallback so reply drafts and recipients don't
         # depend on clients successfully parsing HTML-only bodies. This is what
         # a non-HTML client actually displays, so block boundaries have to

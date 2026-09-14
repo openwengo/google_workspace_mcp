@@ -807,6 +807,103 @@ def html_to_text_preserving_breaks(html_content: str) -> str:
         return html_content
 
 
+_HTML_BLOCK_TAGS = frozenset(
+    {
+        "p",
+        "div",
+        "br",
+        "hr",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "blockquote",
+        "pre",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "html",
+        "head",
+        "body",
+        "style",
+        "script",
+        "center",
+        "section",
+        "article",
+    }
+)
+_HTML_TAG_RE = re.compile(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)[^>]*>")
+_NEWLINE_RUN_RE = re.compile(r"(\n+)")
+
+
+def html_newlines_to_br(html_body: str) -> str:
+    """Turn bare newlines inside an HTML body into ``<br>`` tags.
+
+    LLM callers routinely pass ``body_format="html"`` with paragraphs separated
+    by ``\\n`` and no block markup at all. Browsers collapse that whitespace, so
+    the recipient gets one run-on paragraph. Only newlines that separate
+    *content* (text or inline tags such as ``<b>``/``<a>``) become ``<br>``;
+    newlines that merely sit next to a block-level tag (``<p>``, ``<li>``,
+    ``<div>``...) are formatting whitespace and are left alone, so a
+    well-formed HTML body -- including an appended Gmail signature -- comes
+    back byte-identical. Bodies containing ``<pre>`` are never touched.
+    """
+    if not html_body or "\n" not in html_body:
+        return html_body
+    if "<pre" in html_body.lower():
+        return html_body
+
+    tokens: List[tuple] = []
+    pos = 0
+    for match in _HTML_TAG_RE.finditer(html_body):
+        if match.start() > pos:
+            tokens.append(("text", html_body[pos : match.start()]))
+        tokens.append(("tag", match.group(0), match.group(1).lower()))
+        pos = match.end()
+    if pos < len(html_body):
+        tokens.append(("text", html_body[pos:]))
+
+    def _is_block(index: int) -> bool:
+        token = tokens[index]
+        return token[0] == "tag" and token[2] in _HTML_BLOCK_TAGS
+
+    out: List[str] = []
+    for index, token in enumerate(tokens):
+        if token[0] == "tag":
+            out.append(token[1])
+            continue
+        text = token[1]
+        prev_is_block = index > 0 and _is_block(index - 1)
+        next_is_block = index + 1 < len(tokens) and _is_block(index + 1)
+        pieces = _NEWLINE_RUN_RE.split(text)
+        rebuilt: List[str] = []
+        for piece_index, piece in enumerate(pieces):
+            if not piece.startswith("\n"):
+                rebuilt.append(piece)
+                continue
+            before = "".join(pieces[:piece_index]).strip()
+            after = "".join(pieces[piece_index + 1 :]).strip()
+            if (not before and prev_is_block) or (not after and next_is_block):
+                # Whitespace between block tags: formatting, not content.
+                rebuilt.append(piece)
+                continue
+            rebuilt.append("<br>" * min(piece.count("\n"), 2) + "\n")
+        out.append("".join(rebuilt))
+    return "".join(out)
+
+
 def _signature_html_to_text(signature_html: str) -> str:
     """Convert Gmail signature HTML to plain text, preserving line breaks."""
     return html_to_text_preserving_breaks(signature_html)
