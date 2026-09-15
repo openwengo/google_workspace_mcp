@@ -74,7 +74,8 @@ from gdrive.drive_helpers import (
 
 logger = logging.getLogger(__name__)
 
-SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 10
+# Organizer lookups share a Google API service; its HTTP transport is not thread-safe.
+SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 1
 
 IMPORT_FORMATS_BY_GOOGLE_MIME_TYPE = {
     GOOGLE_DOCS_MIME_TYPE: GOOGLE_DOCS_IMPORT_FORMATS,
