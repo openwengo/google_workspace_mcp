@@ -54,6 +54,24 @@ def _service():
 @pytest.mark.asyncio
 async def test_batch_metadata_is_independent_for_each_tab_and_segment():
     service = _service()
+    document = service.documents.return_value.get.return_value.execute.return_value
+
+    def get_document(**kwargs):
+        # Reject a legacy-field mask even though the production post-batch read
+        # catches exceptions. Metadata assertions below must expose that failure.
+        if kwargs.get("includeTabsContent"):
+            assert kwargs == {
+                "documentId": "doc123",
+                "includeTabsContent": True,
+                "fields": "revisionId,tabs",
+            }
+            response = {"revisionId": "rev2", "tabs": document["tabs"]}
+        else:
+            assert kwargs == {"documentId": "doc123", "fields": "revisionId"}
+            response = {"revisionId": "rev1"}
+        return Mock(execute=Mock(return_value=response))
+
+    service.documents.return_value.get.side_effect = get_document
     targets = [
         ("first", None),
         ("child", None),
@@ -76,6 +94,7 @@ async def test_batch_metadata_is_independent_for_each_tab_and_segment():
         service
     ).execute_batch_operations("doc123", operations)
     assert success, message
+    assert metadata["revision_before"] == "rev1"
     assert metadata["revision_after"] == "rev2"
     assert "document_length" not in metadata
     assert "affected_range" not in metadata
