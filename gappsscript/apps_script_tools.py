@@ -918,13 +918,18 @@ async def _list_script_processes_impl(
         f"[list_script_processes] Email: {user_google_email}, PageSize: {page_size}"
     )
 
-    request_params = {"pageSize": page_size}
     if script_id:
-        request_params["scriptId"] = script_id
-
-    response = await asyncio.to_thread(
-        service.processes().list(**request_params).execute
-    )
+        # processes.list() has no top-level scriptId parameter; the
+        # script-scoped endpoint takes it directly.
+        response = await asyncio.to_thread(
+            service.processes()
+            .listScriptProcesses(scriptId=script_id, pageSize=page_size)
+            .execute
+        )
+    else:
+        response = await asyncio.to_thread(
+            service.processes().list(pageSize=page_size).execute
+        )
 
     processes = response.get("processes", [])
 
@@ -973,7 +978,8 @@ async def list_script_processes(
         service: Injected Google API service client
         user_google_email: User's email address
         page_size: Number of results (default: 50)
-        script_id: Optional filter by script ID
+        script_id: Optional script ID. When set, lists all processes for that
+            script visible to the user, including runs by other users.
 
     Returns:
         str: Formatted string with process list
