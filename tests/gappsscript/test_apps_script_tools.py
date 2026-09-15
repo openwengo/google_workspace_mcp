@@ -5,6 +5,7 @@ Tests all Apps Script tools with mocked API responses
 """
 
 import asyncio
+import json
 import os
 import sys
 import threading
@@ -13,6 +14,8 @@ from unittest.mock import Mock, call
 
 import pytest
 
+from googleapiclient.discovery import build_from_document
+from googleapiclient.http import HttpMock
 from pydantic import TypeAdapter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -825,6 +828,40 @@ async def test_list_script_processes():
 
     assert "myFunction" in result
     assert "COMPLETED" in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("script_id", "expected_path", "expected_query"),
+    [
+        (None, "/v1/processes?", "pageSize=25"),
+        ("abc123", "/v1/processes:listScriptProcesses?", "scriptId=abc123&pageSize=25"),
+    ],
+)
+async def test_list_script_processes_against_discovery_schema(
+    script_id, expected_path, expected_query
+):
+    """Build the service from the real Script API v1 discovery document so an
+    invalid kwarg raises TypeError here, which a Mock service would accept."""
+    fixture_path = os.path.join(
+        os.path.dirname(__file__), "fixtures", "script_discovery_v1.json"
+    )
+    with open(fixture_path, encoding="utf-8") as f:
+        discovery_doc = json.load(f)
+    http = HttpMock()
+    http.data = b'{"processes": []}'
+    service = build_from_document(discovery_doc, http=http)
+
+    result = await _list_script_processes_impl(
+        service=service,
+        user_google_email="test@example.com",
+        page_size=25,
+        script_id=script_id,
+    )
+
+    assert expected_path in http.uri
+    assert expected_query in http.uri
+    assert result == "No recent script executions found."
 
 
 @pytest.mark.asyncio
