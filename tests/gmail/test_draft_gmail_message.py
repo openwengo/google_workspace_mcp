@@ -290,6 +290,7 @@ async def test_draft_gmail_message_appends_gmail_signature_html():
 
     assert "<p>Hello</p>" in raw_text
     assert "Best,<br>Alice" in raw_text
+    assert "gmail_signature" in raw_text
 
 
 @pytest.mark.asyncio

@@ -937,6 +937,14 @@ def _signature_html_to_text(signature_html: str) -> str:
     return html_to_text_preserving_breaks(signature_html)
 
 
+def _wrap_signature_html(signature_html: str) -> str:
+    """Wrap signature HTML in the marker Gmail clients use to detect a signed draft."""
+    return (
+        '<div data-smartmail="gmail_signature">'
+        f'<div dir="ltr">{signature_html}</div></div>'
+    )
+
+
 async def _get_send_as_entries(service) -> List[Dict[str, Any]]:
     """Fetch the account's Gmail send-as settings."""
     try:
