@@ -27,6 +27,7 @@ from core.file_limits import (
 )
 from core.utils import (
     GOOGLE_API_WRITE_RETRIES,
+    OfficeXmlExtractionError,
     extract_office_xml_text,
     handle_http_errors,
     UserInputError,
@@ -100,9 +101,10 @@ _STRUCTURE_CONTENT_FIELDS = (
 )
 # headers/footers are maps and childTabs is recursive, so neither is sub-masked:
 # both stay whole, which costs little and cannot silently drop content.
+# With includeTabsContent=True the API rejects legacy top-level text fields in
+# the mask (issue #1108), so everything but the title is read from tabs.
 _STRUCTURE_FIELDS = (
-    f"title,documentStyle,namedRanges,headers,footers,body({_STRUCTURE_CONTENT_FIELDS}),"
-    f"tabs(tabProperties,childTabs,documentTab("
+    f"title,tabs(tabProperties,childTabs,documentTab("
     f"documentStyle,namedRanges,headers,footers,body({_STRUCTURE_CONTENT_FIELDS})))"
 )
 
@@ -344,7 +346,13 @@ async def get_doc_content(
         except FileTooLargeError as e:
             return str(e)
 
-        office_text = extract_office_xml_text(file_content_bytes, mime_type)
+        try:
+            office_text = extract_office_xml_text(file_content_bytes, mime_type)
+        except OfficeXmlExtractionError as e:
+            office_text = (
+                f"[Could not read '{mime_type}' file - it appears damaged or is "
+                f"not a valid Office document: {e}]"
+            )
         if office_text:
             body_text = office_text
         else:

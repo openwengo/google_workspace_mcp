@@ -33,6 +33,7 @@ from core.utils import (
     GOOGLE_API_WRITE_RETRIES,
     IMAGE_MIME_TYPES,
     encode_image_content,
+    OfficeXmlExtractionError,
     extract_office_xml_text,
     extract_pdf_text,
     handle_http_errors,
@@ -73,7 +74,8 @@ from gdrive.drive_helpers import (
 
 logger = logging.getLogger(__name__)
 
-SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 10
+# Organizer lookups share a Google API service; its HTTP transport is not thread-safe.
+SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 1
 
 IMPORT_FORMATS_BY_GOOGLE_MIME_TYPE = {
     GOOGLE_DOCS_MIME_TYPE: GOOGLE_DOCS_IMPORT_FORMATS,
@@ -409,9 +411,15 @@ async def get_drive_file_content(
 
     if mime_type in office_mime_types:
         # Offload Office XML extraction to a thread to avoid blocking the event loop
-        office_text = await asyncio.to_thread(
-            extract_office_xml_text, file_content_bytes, mime_type
-        )
+        try:
+            office_text = await asyncio.to_thread(
+                extract_office_xml_text, file_content_bytes, mime_type
+            )
+        except OfficeXmlExtractionError as e:
+            office_text = (
+                f"[Could not read '{mime_type}' file - it appears damaged or is "
+                f"not a valid Office document: {e}]"
+            )
         if office_text:
             body_text = office_text
         else:

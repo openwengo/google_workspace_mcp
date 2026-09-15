@@ -1899,6 +1899,71 @@ async def test_list_drive_items_shared_drives_can_include_organizers():
 
 
 @pytest.mark.asyncio
+async def test_list_drive_items_shared_drive_organizer_requests_do_not_overlap(
+    monkeypatch,
+):
+    """Organizer requests on one service must finish before the next starts."""
+    from gdrive.drive_tools import SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT
+
+    mock_service = Mock()
+    mock_service.drives().list().execute.return_value = {
+        "drives": [
+            {"id": "drive1", "name": "Engineering"},
+            {"id": "drive2", "name": "Sales"},
+        ]
+    }
+    active_requests = 0
+    seen_drives = []
+
+    def list_permissions(**kwargs):
+        drive_id = kwargs["fileId"]
+        request = Mock()
+
+        def execute():
+            assert active_requests == 1, "organizer requests overlapped"
+            seen_drives.append(drive_id)
+            return {
+                "permissions": [
+                    {
+                        "role": "organizer",
+                        "type": "user",
+                        "emailAddress": f"{drive_id}@example.com",
+                    }
+                ]
+            }
+
+        request.execute.side_effect = execute
+        return request
+
+    mock_service.permissions().list.side_effect = list_permissions
+    drive_list_execute = mock_service.drives().list().execute
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        nonlocal active_requests
+        if fn is drive_list_execute:
+            return fn(*args, **kwargs)
+        active_requests += 1
+        try:
+            await asyncio.sleep(0)
+            return fn(*args, **kwargs)
+        finally:
+            active_requests -= 1
+
+    monkeypatch.setattr("gdrive.drive_tools.asyncio.to_thread", fake_to_thread)
+    result = await _unwrap(list_drive_items)(
+        service=mock_service,
+        user_google_email="user@example.com",
+        resource_type="shared_drives",
+        include_organizers=True,
+    )
+
+    assert SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT == 1
+    assert seen_drives == ["drive1", "drive2"]
+    assert "Organizer (user): drive1@example.com" in result
+    assert "Organizer (user): drive2@example.com" in result
+
+
+@pytest.mark.asyncio
 async def test_list_drive_items_invalid_resource_type_raises():
     """Unknown resource types are rejected before calling Drive APIs."""
     mock_service = Mock()
