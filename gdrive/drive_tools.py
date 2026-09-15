@@ -74,7 +74,11 @@ from gdrive.drive_helpers import (
 
 logger = logging.getLogger(__name__)
 
-SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 10
+# Fetch shared-drive organizers sequentially. The underlying googleapiclient/httplib2
+# service object is shared across the asyncio.to_thread workers and is not safe to fan
+# out — concurrent permissions.list calls trigger SSL record-layer failures and can
+# crash the server process (#681; same fix as #686 for Chat). See #1133.
+SHARED_DRIVE_ORGANIZER_CONCURRENCY_LIMIT = 1
 
 IMPORT_FORMATS_BY_GOOGLE_MIME_TYPE = {
     GOOGLE_DOCS_MIME_TYPE: GOOGLE_DOCS_IMPORT_FORMATS,
