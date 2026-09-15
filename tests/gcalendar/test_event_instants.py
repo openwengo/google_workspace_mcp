@@ -121,6 +121,9 @@ def test_saved_output_uses_google_response_and_all_day_exclusive_end():
     assert "All-day span: 2 days (end date exclusive)" in _saved_event_times(
         {"start": {"date": "2026-09-17"}, "end": {"date": "2026-09-19"}}
     )
+    assert "All-day span: 1 day (end date exclusive)" in _saved_event_times(
+        {"start": {"date": "2026-09-17"}, "end": {"date": "2026-09-18"}}
+    )
     assert "Elapsed duration" not in _saved_event_times({})
 
 
@@ -147,3 +150,27 @@ def test_malformed_saved_boundary_does_not_turn_a_successful_write_into_an_error
     assert "Elapsed duration" not in _saved_event_times(
         {"start": boundary, "end": {"dateTime": "2026-09-17T11:35:00-07:00"}}
     )
+
+
+@pytest.mark.parametrize("value", ["tomorrow at 3pmT", "2026-09-17T25:00:00Z"])
+def test_unparseable_timestamp_with_zone_names_the_value(value):
+    with pytest.raises(ValueError, match="Invalid RFC3339 timestamp"):
+        _build_time_boundary(value, "Europe/London")
+
+
+@pytest.mark.parametrize("suffix", ["Z", "z"])
+def test_utc_designator_is_case_insensitive(suffix):
+    assert _build_time_boundary(f"2026-09-17T18:35:00{suffix}", "Europe/London") == {
+        "dateTime": "2026-09-17T19:35:00+01:00",
+        "timeZone": "Europe/London",
+    }
+
+
+def test_multi_week_duration_is_not_rendered_in_exponent_notation():
+    result = _saved_event_times(
+        {
+            "start": {"dateTime": "2026-09-01T09:00:00Z"},
+            "end": {"dateTime": "2026-09-15T09:00:00Z"},
+        }
+    )
+    assert "Elapsed duration: 20160 minutes (1209600 seconds)" in result

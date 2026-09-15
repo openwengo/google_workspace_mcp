@@ -321,7 +321,13 @@ def _build_time_boundary(time_value: str, timezone: Optional[str]) -> Dict[str, 
             f"Unrecognized IANA timezone {timezone!r}. Use a zone name such as "
             "'America/New_York' or 'Europe/Amsterdam'."
         ) from exc
-    parsed = datetime.datetime.fromisoformat(time_value.replace("Z", "+00:00"))
+    try:
+        parsed = datetime.datetime.fromisoformat(re.sub(r"[zZ]$", "+00:00", time_value))
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid RFC3339 timestamp {time_value!r}. Use a value such as "
+            "'2026-09-17T11:35:00' or '2026-09-17T11:35:00-07:00'."
+        ) from exc
     if parsed.tzinfo is not None:
         time_value = parsed.astimezone(zone).isoformat()
     return {"dateTime": time_value, "timeZone": timezone}
@@ -338,15 +344,18 @@ def _saved_event_times(event: Dict[str, Any]) -> str:
         if start.moment and end.moment:
             # Subtraction in a shared ZoneInfo uses wall time across DST changes.
             utc = datetime.timezone.utc
-            seconds = (
-                end.moment.astimezone(utc) - start.moment.astimezone(utc)
-            ).total_seconds()
+            seconds = round(
+                (
+                    end.moment.astimezone(utc) - start.moment.astimezone(utc)
+                ).total_seconds()
+            )
             lines.append(
-                f"Elapsed duration: {seconds / 60:g} minutes ({seconds:g} seconds)"
+                f"Elapsed duration: {seconds / 60:.15g} minutes ({seconds} seconds)"
             )
         elif start.is_all_day and end.is_all_day:
             days = (end.local_date - start.local_date).days
-            lines.append(f"All-day span: {days} days (end date exclusive)")
+            unit = "day" if days == 1 else "days"
+            lines.append(f"All-day span: {days} {unit} (end date exclusive)")
     return "\n" + "\n".join(lines)
 
 
@@ -1435,7 +1444,7 @@ async def manage_event(
         user_google_email (str): The user's Google email address. Required.
         action (str): Action to perform - "create", "update", "delete", or "rsvp".
         summary (Optional[str]): Event title (required for create).
-        start_time (Optional[str]): Start time (required for create). An RFC3339 UTC offset identifies the exact instant and is preserved. Without an offset, supply start_timezone or timezone. Date-only values create all-day events.
+        start_time (Optional[str]): Start time (required for create). An RFC3339 UTC offset identifies the exact instant and is preserved. Without an offset, supply start_timezone or timezone. For a local wall-clock time, omit the offset and pass the zone so Google resolves daylight saving; a wrong offset moves the event. Date-only values create all-day events.
         end_time (Optional[str]): End time (required for create). An RFC3339 UTC offset identifies the exact instant and is preserved. Without an offset, supply end_timezone or timezone. All-day end dates are exclusive.
         event_id (Optional[str]): Event ID (required for update and delete).
         calendar_id (str): Calendar ID (default: 'primary').
