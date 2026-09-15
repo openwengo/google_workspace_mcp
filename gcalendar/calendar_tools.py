@@ -305,6 +305,13 @@ def _build_time_boundary(time_value: str, timezone: Optional[str]) -> Dict[str, 
     """
     if "T" not in time_value:
         return {"date": time_value}
+    try:
+        parsed = datetime.datetime.fromisoformat(re.sub(r"[zZ]$", "+00:00", time_value))
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid RFC3339 timestamp {time_value!r}. Use a value such as "
+            "'2026-09-17T11:35:00' or '2026-09-17T11:35:00-07:00'."
+        ) from exc
     # `is None` rather than falsy: an explicitly empty zone is an invalid value, not
     # an omitted one, and must reach validation below instead of being treated as
     # "no zone given".
@@ -320,13 +327,6 @@ def _build_time_boundary(time_value: str, timezone: Optional[str]) -> Dict[str, 
         raise ValueError(
             f"Unrecognized IANA timezone {timezone!r}. Use a zone name such as "
             "'America/New_York' or 'Europe/Amsterdam'."
-        ) from exc
-    try:
-        parsed = datetime.datetime.fromisoformat(re.sub(r"[zZ]$", "+00:00", time_value))
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid RFC3339 timestamp {time_value!r}. Use a value such as "
-            "'2026-09-17T11:35:00' or '2026-09-17T11:35:00-07:00'."
         ) from exc
     if parsed.tzinfo is not None:
         time_value = parsed.astimezone(zone).isoformat()

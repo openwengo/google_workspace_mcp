@@ -83,6 +83,11 @@ def test_boundary_keeps_offset_when_no_zone_given():
     }
 
 
+def test_boundary_without_zone_rejects_invalid_timestamp():
+    with pytest.raises(ValueError, match="Invalid RFC3339 timestamp"):
+        _build_time_boundary("2026-08-21T25:00:00", None)
+
+
 def test_boundary_handles_all_day_dates():
     assert _build_time_boundary("2026-08-21", "Europe/Amsterdam") == {
         "date": "2026-08-21"
