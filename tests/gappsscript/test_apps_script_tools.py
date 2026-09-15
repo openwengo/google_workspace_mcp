@@ -5,6 +5,7 @@ Tests all Apps Script tools with mocked API responses
 """
 
 import asyncio
+import json
 import os
 import sys
 import threading
@@ -13,6 +14,8 @@ from unittest.mock import Mock, call
 
 import pytest
 
+from googleapiclient.discovery import build_from_document
+from googleapiclient.http import HttpMock
 from pydantic import TypeAdapter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -828,73 +831,37 @@ async def test_list_script_processes():
 
 
 @pytest.mark.asyncio
-async def test_list_script_processes_with_script_id():
-    """script_id must go through processes().listScriptProcesses(scriptId=...),
-    not processes().list() — the latter only exposes script-scoped filtering
-    via a nested userProcessFilter.scriptId param that googleapiclient will not
-    accept as a bare 'scriptId' kwarg (regression for two consecutive wrong
-    fixes: 'unexpected keyword argument scriptId', then the same error for the
-    literal dotted string). See test_list_script_processes_matches_real_api_schema
-    below for a test that would have caught both without a live API call."""
-    mock_service = Mock()
-    mock_service.processes().listScriptProcesses().execute.return_value = {
-        "processes": []
-    }
-
-    await _list_script_processes_impl(
-        service=mock_service,
-        user_google_email="test@example.com",
-        page_size=25,
-        script_id="test123",
-    )
-
-    _, call_kwargs = mock_service.processes().listScriptProcesses.call_args
-    assert call_kwargs.get("scriptId") == "test123"
-    assert call_kwargs.get("pageSize") == 25
-    mock_service.processes().list.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_list_script_processes_without_script_id_uses_list():
-    mock_service = Mock()
-    mock_service.processes().list().execute.return_value = {"processes": []}
-
-    await _list_script_processes_impl(
-        service=mock_service, user_google_email="test@example.com", page_size=25
-    )
-
-    _, call_kwargs = mock_service.processes().list.call_args
-    assert call_kwargs == {"pageSize": 25}
-    mock_service.processes().listScriptProcesses.assert_not_called()
-
-
-def test_list_script_processes_matches_real_api_schema():
-    """Build real request objects against the actual Apps Script API v1
-    discovery document (cached as a fixture — no network) instead of a Mock,
-    so a parameter name that Mock() would happily accept but the real
-    googleapiclient-generated method would reject with TypeError gets caught
-    here. This is the test that should have existed before either of the two
-    wrong fixes shipped."""
-    import json
-    import os
-
-    import httplib2
-    from googleapiclient.discovery import build_from_document
-
+@pytest.mark.parametrize(
+    ("script_id", "expected_path", "expected_query"),
+    [
+        (None, "/v1/processes?", "pageSize=25"),
+        ("abc123", "/v1/processes:listScriptProcesses?", "scriptId=abc123&pageSize=25"),
+    ],
+)
+async def test_list_script_processes_against_discovery_schema(
+    script_id, expected_path, expected_query
+):
+    """Build the service from the real Script API v1 discovery document so an
+    invalid kwarg raises TypeError here, which a Mock service would accept."""
     fixture_path = os.path.join(
         os.path.dirname(__file__), "fixtures", "script_discovery_v1.json"
     )
     with open(fixture_path, encoding="utf-8") as f:
         discovery_doc = json.load(f)
+    http = HttpMock()
+    http.data = b'{"processes": []}'
+    service = build_from_document(discovery_doc, http=http)
 
-    service = build_from_document(discovery_doc, http=httplib2.Http())
+    result = await _list_script_processes_impl(
+        service=service,
+        user_google_email="test@example.com",
+        page_size=25,
+        script_id=script_id,
+    )
 
-    request = service.processes().listScriptProcesses(scriptId="abc123", pageSize=10)
-    assert "scriptId=abc123" in request.uri
-    assert "pageSize=10" in request.uri
-
-    request = service.processes().list(pageSize=10)
-    assert "pageSize=10" in request.uri
+    assert expected_path in http.uri
+    assert expected_query in http.uri
+    assert result == "No recent script executions found."
 
 
 @pytest.mark.asyncio
