@@ -194,11 +194,6 @@ def test_configure_server_for_http_accepts_client_secret_from_file(
     monkeypatch.delenv("GOOGLE_CLIENT_SECRETS", raising=False)
     monkeypatch.delenv("EXTERNAL_OAUTH21_PROVIDER", raising=False)
     for var in (
-        "FASTMCP_SERVER_AUTH",
-        "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID",
-        "FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET",
-        "FASTMCP_SERVER_AUTH_GOOGLE_BASE_URL",
-        "FASTMCP_SERVER_AUTH_GOOGLE_REDIRECT_PATH",
         "FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY",
         "WORKSPACE_MCP_OAUTH_PROXY_STORAGE_BACKEND",
         "WORKSPACE_MCP_OAUTH_PROXY_VALKEY_HOST",
