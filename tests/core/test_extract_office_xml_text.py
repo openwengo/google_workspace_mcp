@@ -8,7 +8,9 @@ is worse than no search — it produces a confident "not present" that is wrong.
 import io
 import zipfile
 
-from core.utils import extract_office_xml_text
+import pytest
+
+from core.utils import OfficeXmlExtractionError, extract_office_xml_text
 
 W_NS = (
     'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -441,6 +443,7 @@ class TestPowerPoint:
         buf = io.BytesIO()
         a_ns = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
         with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("ppt/presentation.xml", "<presentation/>")
             zf.writestr(
                 "ppt/slides/slide1.xml",
                 f'<?xml version="1.0"?><root {a_ns}>'
@@ -453,6 +456,7 @@ class TestPowerPoint:
         buf = io.BytesIO()
         a_ns = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
         with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("ppt/presentation.xml", "<presentation/>")
             zf.writestr(
                 "ppt/slides/slide1.xml",
                 f'<?xml version="1.0"?><root {a_ns}>'
@@ -468,6 +472,7 @@ class TestFallbackAndOtherFormats:
         buf = io.BytesIO()
         ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
         with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("xl/workbook.xml", "<workbook/>")
             zf.writestr(
                 "xl/worksheets/sheet1.xml",
                 f'<?xml version="1.0"?><worksheet {ns}><sheetData><row>'
@@ -480,3 +485,107 @@ class TestFallbackAndOtherFormats:
         # values became newline-joined or concatenated, which is the very thing
         # this test exists to prevent.
         assert out == "alpha beta"
+
+
+SHEET_NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+
+
+def _zip(**members: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, xml in members.items():
+            zf.writestr(name, xml)
+    return buf.getvalue()
+
+
+def _xlsx(**members: str) -> bytes:
+    return _zip(**{"xl/workbook.xml": "<workbook/>", **members})
+
+
+def _shared_string_sheet(value: str) -> str:
+    return (
+        f'<worksheet {SHEET_NS}><sheetData><row><c r="A1" t="s"><v>{value}</v></c>'
+        "</row></sheetData></worksheet>"
+    )
+
+
+class TestDamagedParts:
+    """A damaged part must not degrade into partial text or a false 'empty'."""
+
+    def test_malformed_related_word_part_raises(self):
+        data = _docx(_p("Body"), header1="<w:hdr")
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, DOCX_MIME)
+
+    def test_missing_related_word_part_raises(self):
+        data = _docx(_p("Body"), relationships=[("rId1", "header", "header1.xml")])
+        with pytest.raises(OfficeXmlExtractionError, match="header1.xml"):
+            extract_office_xml_text(data, DOCX_MIME)
+
+    def test_malformed_word_relationships_raise(self):
+        buf = io.BytesIO(_docx(_p("Body")))
+        with zipfile.ZipFile(buf, "a") as zf:
+            zf.writestr("word/_rels/document.xml.rels", "<Relationships")
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(buf.getvalue(), DOCX_MIME)
+
+    @pytest.mark.parametrize(
+        ("mime_type", "part", "members"),
+        [
+            (PPTX_MIME, "ppt/presentation.xml", {"ppt/slides/slide1.xml": "<sld/>"}),
+            (XLSX_MIME, "xl/workbook.xml", {"xl/worksheets/sheet1.xml": "<ws/>"}),
+        ],
+    )
+    def test_missing_primary_part_raises(self, mime_type, part, members):
+        with pytest.raises(OfficeXmlExtractionError, match=part):
+            extract_office_xml_text(_zip(**members), mime_type)
+
+    @pytest.mark.parametrize(
+        ("mime_type", "part"),
+        [(PPTX_MIME, "ppt/presentation.xml"), (XLSX_MIME, "xl/workbook.xml")],
+    )
+    def test_malformed_primary_part_raises(self, mime_type, part):
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(_zip(**{part: "<root"}), mime_type)
+
+    def test_malformed_worksheet_raises(self):
+        data = _xlsx(**{"xl/worksheets/sheet1.xml": "<worksheet"})
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, XLSX_MIME)
+
+    def test_malformed_shared_strings_raises(self):
+        data = _xlsx(
+            **{
+                "xl/worksheets/sheet1.xml": f"<worksheet {SHEET_NS}/>",
+                "xl/sharedStrings.xml": "<sst",
+            }
+        )
+        with pytest.raises(OfficeXmlExtractionError):
+            extract_office_xml_text(data, XLSX_MIME)
+
+    def test_shared_string_reference_without_part_raises(self):
+        data = _xlsx(**{"xl/worksheets/sheet1.xml": _shared_string_sheet("0")})
+        with pytest.raises(OfficeXmlExtractionError, match="sharedStrings.xml"):
+            extract_office_xml_text(data, XLSX_MIME)
+
+    @pytest.mark.parametrize(
+        ("value", "message"), [("1", "out of range"), ("x", "non-integer")]
+    )
+    def test_invalid_shared_string_index_raises(self, value, message):
+        data = _xlsx(
+            **{
+                "xl/worksheets/sheet1.xml": _shared_string_sheet(value),
+                "xl/sharedStrings.xml": f"<sst {SHEET_NS}><si><t>only</t></si></sst>",
+            }
+        )
+        with pytest.raises(OfficeXmlExtractionError, match=message):
+            extract_office_xml_text(data, XLSX_MIME)
+
+    def test_valid_shared_string_resolves(self):
+        data = _xlsx(
+            **{
+                "xl/worksheets/sheet1.xml": _shared_string_sheet("0"),
+                "xl/sharedStrings.xml": f"<sst {SHEET_NS}><si><t>only</t></si></sst>",
+            }
+        )
+        assert extract_office_xml_text(data, XLSX_MIME) == "only"

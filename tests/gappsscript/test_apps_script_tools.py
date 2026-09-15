@@ -5,14 +5,17 @@ Tests all Apps Script tools with mocked API responses
 """
 
 import asyncio
+import json
 import os
 import sys
 import threading
 from typing import get_type_hints
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
+from googleapiclient.discovery import build_from_document
+from googleapiclient.http import HttpMock
 from pydantic import TypeAdapter
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -389,7 +392,16 @@ async def test_run_script_function():
     mock_service = Mock()
     mock_response = {"response": {"result": "Success"}}
 
-    mock_service.scripts().run().execute.return_value = mock_response
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {
+                "deploymentId": "deploy123",
+                "deploymentConfig": {"versionNumber": 1},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            }
+        ]
+    }
+    mock_service.scripts().run.return_value.execute.return_value = mock_response
 
     result = await _run_script_function_impl(
         service=mock_service,
@@ -401,6 +413,184 @@ async def test_run_script_function():
 
     assert "Execution successful" in result
     assert "myFunction" in result
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="deploy123",
+        body={"function": "myFunction", "devMode": True},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_uses_only_api_executable_deployment():
+    """HEAD and non-executable deployments are skipped."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {"deploymentId": "head", "deploymentConfig": {}},
+            {
+                "deploymentId": "web-app",
+                "deploymentConfig": {"versionNumber": 2},
+                "entryPoints": [{"entryPointType": "WEB_APP"}],
+            },
+            {
+                "deploymentId": "api-executable",
+                "deploymentConfig": {"versionNumber": 5},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+        ]
+    }
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="api-executable",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_selects_highest_version_deployment():
+    """Automatic discovery picks the API deployment with the highest version."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {
+                "deploymentId": "older",
+                "deploymentConfig": {"versionNumber": 4},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+            {
+                "deploymentId": "newest",
+                "deploymentConfig": {"versionNumber": 7},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+            {
+                "deploymentId": "middle",
+                "deploymentConfig": {"versionNumber": 5},
+                "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+            },
+        ]
+    }
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="newest",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_searches_all_deployment_pages():
+    """A runnable deployment on a later page is discovered."""
+    mock_service = Mock()
+    deployment_list = mock_service.projects().deployments().list
+    deployment_list.return_value.execute.side_effect = [
+        {
+            "deployments": [
+                {
+                    "deploymentId": "web-app",
+                    "deploymentConfig": {"versionNumber": 8},
+                    "entryPoints": [{"entryPointType": "WEB_APP"}],
+                }
+            ],
+            "nextPageToken": "page-2",
+        },
+        {
+            "deployments": [
+                {
+                    "deploymentId": "api-executable",
+                    "deploymentConfig": {"versionNumber": 3},
+                    "entryPoints": [{"entryPointType": "EXECUTION_API"}],
+                }
+            ]
+        },
+    ]
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    assert deployment_list.call_args_list == [
+        call(scriptId="test123"),
+        call(scriptId="test123", pageToken="page-2"),
+    ]
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="api-executable",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_uses_supplied_deployment_without_lookup():
+    """A supplied deployment ID bypasses deployment discovery."""
+    mock_service = Mock()
+    mock_service.scripts().run.return_value.execute.return_value = {
+        "response": {"result": "Success"}
+    }
+
+    await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+        deployment_id="deploy-known",
+    )
+
+    mock_service.projects().deployments().list.assert_not_called()
+    mock_service.scripts().run.assert_called_once_with(
+        scriptId="deploy-known",
+        body={"function": "myFunction", "devMode": False},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_script_function_requires_api_executable_deployment():
+    """Execution is not attempted without a versioned API executable."""
+    mock_service = Mock()
+    mock_service.projects().deployments().list().execute.return_value = {
+        "deployments": [
+            {"deploymentId": "head", "deploymentConfig": {}},
+            {
+                "deploymentId": "web-app",
+                "deploymentConfig": {"versionNumber": 1},
+                "entryPoints": [{"entryPointType": "WEB_APP"}],
+            },
+        ]
+    }
+
+    result = await _run_script_function_impl(
+        service=mock_service,
+        user_google_email="test@example.com",
+        script_id="test123",
+        function_name="myFunction",
+    )
+
+    assert "No versioned API Executable deployment was found" in result
+    assert "Deploy > New deployment > API Executable" in result
+    assert "manifest already defines executionApi" in result
+    mock_service.scripts().run.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -638,6 +828,40 @@ async def test_list_script_processes():
 
     assert "myFunction" in result
     assert "COMPLETED" in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("script_id", "expected_path", "expected_query"),
+    [
+        (None, "/v1/processes?", "pageSize=25"),
+        ("abc123", "/v1/processes:listScriptProcesses?", "scriptId=abc123&pageSize=25"),
+    ],
+)
+async def test_list_script_processes_against_discovery_schema(
+    script_id, expected_path, expected_query
+):
+    """Build the service from the real Script API v1 discovery document so an
+    invalid kwarg raises TypeError here, which a Mock service would accept."""
+    fixture_path = os.path.join(
+        os.path.dirname(__file__), "fixtures", "script_discovery_v1.json"
+    )
+    with open(fixture_path, encoding="utf-8") as f:
+        discovery_doc = json.load(f)
+    http = HttpMock()
+    http.data = b'{"processes": []}'
+    service = build_from_document(discovery_doc, http=http)
+
+    result = await _list_script_processes_impl(
+        service=service,
+        user_google_email="test@example.com",
+        page_size=25,
+        script_id=script_id,
+    )
+
+    assert expected_path in http.uri
+    assert expected_query in http.uri
+    assert result == "No recent script executions found."
 
 
 @pytest.mark.asyncio

@@ -76,7 +76,9 @@ from gmail.gmail_helpers import (
     _http_error_status,
     _retryable_result_ids,
     _signature_html_to_text,
+    _wrap_signature_html,
     build_label_color,
+    html_newlines_to_br,
     html_to_text_preserving_breaks,
 )
 
@@ -635,7 +637,7 @@ def _append_signature_to_body(
 
     if body_format == "html":
         separator = "<br><br>" if body.strip() else ""
-        return f"{body}{separator}{signature_html}"
+        return f"{body}{separator}{_wrap_signature_html(signature_html)}"
 
     signature_text = _signature_html_to_text(signature_html).strip()
     if not signature_text:
@@ -694,7 +696,7 @@ def _build_quoted_reply_body(
         # Signature
         sig_block = ""
         if signature_html and signature_html.strip():
-            sig_block = f"<br><br>{signature_html}"
+            sig_block = f"<br><br>{_wrap_signature_html(signature_html)}"
 
         # Quoted original
         orig_html = original.get("html_body") or ""
@@ -2766,6 +2768,12 @@ async def send_gmail_message(
             service, from_email=sender_email
         )
 
+    if body_format == "html":
+        # Bare newlines between text are invisible to HTML renderers; callers
+        # (LLMs especially) pass them expecting line breaks. Convert only the
+        # caller's body, before any signature or quoted original is attached.
+        body = html_newlines_to_br(body)
+
     if quote_original and target_reply:
         send_body_content = _build_quoted_reply_body(
             body,
@@ -3182,7 +3190,9 @@ async def draft_gmail_message(
             from_email=from_email,
             fallback_email=user_google_email,
         )
-    draft_body = body
+    # Convert only the caller's body, before any signature or quoted original
+    # is attached; see send_gmail_message.
+    draft_body = html_newlines_to_br(body) if body_format == "html" else body
     signature_html = resolved_signature_html if include_signature else ""
 
     reply_context = None
