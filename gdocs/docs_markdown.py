@@ -18,6 +18,7 @@ import logging
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 from gdocs.docs_links import resolve_link_target
 
@@ -443,7 +444,13 @@ def _apply_text_style(
 
     if link_target:
         if link_target.kind == "url":
-            text = f"[{text}]({link_target.value})"
+            destination = link_target.value
+            if re.search(r"[\s()<>\\]", destination):
+                # Angle brackets allow unbalanced parentheses. Encode whitespace
+                # and characters that could escape or close the destination.
+                destination = quote(destination, safe="/:?#[]@!$&'()*+,;=%")
+                destination = f"<{destination}>"
+            text = f"[{text}]({destination})"
         elif link_target.kind in ("heading", "bookmark"):
             tab_part = f", tab: {link_target.tab_id}" if link_target.tab_id else ""
             text = f"{text} [{link_target.kind}: {link_target.value}{tab_part}]"

@@ -240,6 +240,57 @@ class TestTextFormatting:
 
 class TestTextLinks:
     @pytest.mark.parametrize(
+        "url, expected_href",
+        [
+            ("https://example.com/api", "https://example.com/api"),
+            ("https://example.com/a)b", "https://example.com/a)b"),
+            ("https://example.com/a(b", "https://example.com/a(b"),
+            ("https://example.com/a(b)c", "https://example.com/a(b)c"),
+            ("https://example.com/a b", "https://example.com/a%20b"),
+            ("https://example.com/a\tb", "https://example.com/a%09b"),
+            ("https://example.com/a\nb", "https://example.com/a%0Ab"),
+            ("https://example.com/<a>)", "https://example.com/%3Ca%3E)"),
+            ("https://example.com/a\\)b", "https://example.com/a%5C)b"),
+        ],
+    )
+    @pytest.mark.parametrize("monospace", [False, True])
+    def test_url_destinations_round_trip_through_markdown(
+        self, url, expected_href, monospace
+    ):
+        """URL punctuation and whitespace cannot truncate or break rendered links."""
+        style = {"link": {"url": url}}
+        if monospace:
+            style["weightedFontFamily"] = {"fontFamily": "Roboto Mono"}
+        doc = {
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": "Reference\n",
+                                        "textStyle": style,
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
+        markdown = convert_doc_to_markdown(doc)
+        tokens = MarkdownIt().parseInline(markdown.strip())[0].children
+        assert [
+            token.attrGet("href") for token in tokens if token.type == "link_open"
+        ] == [expected_href]
+        assert "".join(token.content for token in tokens) == "Reference"
+        if url == "https://example.com/api":
+            label = "`Reference`" if monospace else "Reference"
+            assert markdown == f"[{label}]({url})\n"
+
+    @pytest.mark.parametrize(
         "content",
         [
             "example()",
