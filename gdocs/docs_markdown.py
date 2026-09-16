@@ -18,6 +18,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from gdocs.docs_links import resolve_link_target
+
 logger = logging.getLogger(__name__)
 
 MONO_FONTS = {"Courier New", "Consolas", "Roboto Mono", "Source Code Pro"}
@@ -177,6 +179,9 @@ def _convert_body_to_markdown(doc: dict[str, Any]) -> str:
             )
             lines.append(table_md)
             lines.append("")
+        elif "sectionBreak" in element:
+            lines.append("[Section Break]")
+            lines.append("")
 
     if footnote_defs:
         lines.append("")
@@ -224,8 +229,12 @@ def _convert_paragraph_text(
             parts.append("\n---\n")
         elif "autoText" in elem:
             parts.append(_convert_auto_text(elem["autoText"]))
-        elif "pageBreak" in elem or "columnBreak" in elem:
-            pass  # No meaningful markdown representation
+        elif "pageBreak" in elem:
+            parts.append("[Page Break]")
+        elif "columnBreak" in elem:
+            parts.append("[Column Break]")
+        elif "sectionBreak" in elem:
+            parts.append("[Section Break]")
         elif "equation" in elem:
             parts.append(_convert_equation(elem["equation"]))
     return "".join(parts).strip()
@@ -400,12 +409,11 @@ def _apply_text_style(
     text: str, style: dict[str, Any], skip_strikethrough: bool = False
 ) -> str:
     """Apply markdown formatting based on text style."""
-    link = style.get("link", {})
-    url = link.get("url")
+    link_target = resolve_link_target(style.get("link"))
 
     font_family = style.get("weightedFontFamily", {}).get("fontFamily", "")
     if font_family in MONO_FONTS:
-        return f"`{text}`"
+        text = f"`{text}`"
 
     bold = style.get("bold", False)
     italic = style.get("italic", False)
@@ -421,8 +429,14 @@ def _apply_text_style(
     if strikethrough and not skip_strikethrough:
         text = f"~~{text}~~"
 
-    if url:
-        text = f"[{text}]({url})"
+    if link_target:
+        if link_target.kind == "url":
+            text = f"[{text}]({link_target.value})"
+        elif link_target.kind in ("heading", "bookmark"):
+            tab_part = f", tab: {link_target.tab_id}" if link_target.tab_id else ""
+            text = f"{text} [{link_target.kind}: {link_target.value}{tab_part}]"
+        elif link_target.kind == "tab":
+            text = f"{text} [tab: {link_target.value}]"
 
     return text
 

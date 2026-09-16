@@ -235,6 +235,100 @@ class TestTextFormatting:
         assert "*italic*" in md
 
 
+class TestTextLinks:
+    def test_external_and_internal_link_targets(self):
+        doc = {
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": "External",
+                                        "textStyle": {
+                                            "italic": True,
+                                            "link": {"url": "https://example.com"},
+                                        },
+                                    }
+                                },
+                                {"textRun": {"content": " ", "textStyle": {}}},
+                                {
+                                    "textRun": {
+                                        "content": "Heading",
+                                        "textStyle": {
+                                            "link": {
+                                                "heading": {
+                                                    "id": "heading-1",
+                                                    "tabId": "tab-2",
+                                                }
+                                            }
+                                        },
+                                    }
+                                },
+                                {"textRun": {"content": " ", "textStyle": {}}},
+                                {
+                                    "textRun": {
+                                        "content": "Bookmark",
+                                        "textStyle": {
+                                            "link": {
+                                                "bookmarkId": "bookmark-1",
+                                                "tabId": "tab-3",
+                                            }
+                                        },
+                                    }
+                                },
+                                {"textRun": {"content": " ", "textStyle": {}}},
+                                {
+                                    "textRun": {
+                                        "content": "Tab\n",
+                                        "textStyle": {"link": {"tabId": "tab-4"}},
+                                    }
+                                },
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
+        assert convert_doc_to_markdown(doc) == (
+            "[*External*](https://example.com) "
+            "Heading [heading: heading-1, tab: tab-2] "
+            "Bookmark [bookmark: bookmark-1, tab: tab-3] "
+            "Tab [tab: tab-4]\n"
+        )
+
+    def test_monospace_link_keeps_code_span_and_destination(self):
+        doc = {
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": "example()\n",
+                                        "textStyle": {
+                                            "weightedFontFamily": {
+                                                "fontFamily": "Roboto Mono"
+                                            },
+                                            "link": {"url": "https://example.com/api"},
+                                        },
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
+        assert convert_doc_to_markdown(doc) == (
+            "[`example()`](https://example.com/api)\n"
+        )
+
+
 class TestHeadings:
     def test_title(self):
         md = convert_doc_to_markdown(HEADINGS_DOC)
@@ -870,7 +964,7 @@ class TestSmartChips:
         md = convert_doc_to_markdown(doc)
         assert "The formula is [Equation]" in md
 
-    def test_page_break_skipped(self):
+    def test_page_break_marker(self):
         doc = {
             "title": "Test",
             "body": {
@@ -899,7 +993,41 @@ class TestSmartChips:
             },
         }
         md = convert_doc_to_markdown(doc)
-        assert "BeforeAfter" in md
+        assert "Before[Page Break]After" in md
+
+    def test_column_and_section_break_markers(self):
+        doc = {
+            "title": "Test",
+            "body": {
+                "content": [
+                    {"sectionBreak": {}},
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": "Before",
+                                        "textStyle": {},
+                                    }
+                                },
+                                {"columnBreak": {}},
+                                {"sectionBreak": {}},
+                                {
+                                    "textRun": {
+                                        "content": "After\n",
+                                        "textStyle": {},
+                                    }
+                                },
+                            ],
+                            "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                        }
+                    },
+                ]
+            },
+        }
+
+        md = convert_doc_to_markdown(doc)
+        assert md == ("[Section Break]\n\nBefore[Column Break][Section Break]After\n")
 
 
 class TestEmptyDoc:

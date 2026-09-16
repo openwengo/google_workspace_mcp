@@ -71,6 +71,7 @@ from gdocs.docs_markdown import (
     parse_drive_comments,
 )
 from gdocs.docs_markdown_writer import markdown_to_docs_requests
+from gdocs.docs_plain_text import render_doc_to_plain_text
 from gdocs.operation_schemas import BatchDocOperations, ParagraphBorderEdge
 
 # Import operation managers for complex business logic
@@ -203,13 +204,14 @@ async def get_doc_content(
     document_id: str,
     suggestions_view_mode: str = "DEFAULT_FOR_CURRENT_ACCESS",
     tab_id: Optional[str] = None,
+    preserve_context: bool = False,
 ) -> str:
     """
     Retrieves content of a Google Doc or a Drive file (like .docx) identified by document_id.
     - Native Google Docs: Fetches content via Docs API.
     - Office files (.docx, etc.) stored in Drive: Downloads via Drive API and extracts text.
 
-    For native Google Docs the returned text is index-aligned with the document:
+    By default, native Google Docs text is index-aligned with the document:
     empty paragraphs are preserved and every non-text element that occupies an
     index (inline object, page break, footnote reference, ...) is rendered as one
     U+FFFC placeholder per index. The document body starts at index 1, so an
@@ -217,6 +219,13 @@ async def get_doc_content(
     and that index can be passed straight to format_text or delete_text. Tables
     and multi-tab documents interleave separators, so alignment holds up to the
     first table or tab header.
+
+    Set preserve_context=True for readable link destinations, internal targets,
+    smart-chip values, table boundaries, headers, footers, footnotes, and object
+    context exposed by the Docs API. This output is plain text, not Markdown,
+    and its offsets must not be used as document editing indices. Comments,
+    revision history, exact visual layout, and chip details hidden by the API
+    are not included. Use get_doc_as_markdown for formatting or comments.
 
     Args:
         user_google_email: User's Google email address
@@ -228,8 +237,11 @@ async def get_doc_content(
             - "PREVIEW_WITHOUT_SUGGESTIONS": Preview as if all suggestions were rejected
         tab_id: Optional ID of a single tab to read (from inspect_doc_structure).
             When given, only that tab's content is returned with no tab separator,
-            so the content stays index-aligned with that tab. When omitted, every
-            tab is returned separated by "--- TAB: ... ---" markers.
+            so the default output stays index-aligned with that tab. When
+            omitted, every tab is returned with "--- TAB: ... ---" markers.
+        preserve_context: Include readable semantic annotations for native Docs.
+            Defaults to False to retain index alignment. Office extraction is
+            unaffected. With tab_id, only the selected tab is rendered.
 
     Returns:
         str: The document content with metadata header.
@@ -277,12 +289,17 @@ async def get_doc_content(
                 return f"Error: Tab {tab_id} not found in document."
             if "documentTab" not in tab:
                 return f"Error: Tab {tab_id} is not a document tab and has no body content."
-            # No tab separator: the caller named one tab, so the content section
-            # stays index-aligned with it.
+            # No tab separator: the caller named one tab. The default output
+            # stays index-aligned; context annotations are opt-in.
             file_name = f"{file_name} [tab: {_tab_title(tab)}]"
-            body_text = extract_text_from_elements(
-                tab["documentTab"].get("body", {}).get("content", [])
-            )
+            if preserve_context:
+                body_text = render_doc_to_plain_text(tab["documentTab"], tab_id)
+            else:
+                body_text = extract_text_from_elements(
+                    tab["documentTab"].get("body", {}).get("content", [])
+                )
+        elif preserve_context:
+            body_text = render_doc_to_plain_text(doc_data)
         else:
             processed_text_lines = []
 
