@@ -3,6 +3,9 @@
 import sys
 import os
 
+import pytest
+from markdown_it import MarkdownIt
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from gdocs.docs_markdown import (
@@ -236,7 +239,58 @@ class TestTextFormatting:
 
 
 class TestTextLinks:
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "example()",
+            "a`b",
+            "a``b`c",
+            "`start",
+            "end`",
+            "`both`",
+            "```",
+            "a```b``c",
+            " `padded` ",
+            " padded ",
+            "   ",
+        ],
+    )
+    @pytest.mark.parametrize("linked", [False, True])
+    def test_monospace_content_round_trips_through_markdown(self, content, linked):
+        """Backticks and edge spaces survive parsing, including inside styled links."""
+        style = {"weightedFontFamily": {"fontFamily": "Roboto Mono"}}
+        if linked:
+            style.update({"bold": True, "link": {"url": "https://example.com/api"}})
+        doc = {
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {"textRun": {"content": "Before "}},
+                                {"textRun": {"content": content, "textStyle": style}},
+                                {"textRun": {"content": " after\n"}},
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
+        markdown = convert_doc_to_markdown(doc)
+        tokens = MarkdownIt().parseInline(markdown.strip())[0].children
+        code = [token for token in tokens if token.type == "code_inline"]
+        assert len(code) == 1
+        assert code[0].content == content
+        assert "".join(token.content for token in tokens) == f"Before {content} after"
+        if linked:
+            assert [
+                token.attrGet("href") for token in tokens if token.type == "link_open"
+            ] == ["https://example.com/api"]
+            assert any(token.type == "strong_open" for token in tokens)
+
     def test_external_and_internal_link_targets(self):
+        """Markdown retains styled URLs and readable heading, bookmark, and tab IDs."""
         doc = {
             "body": {
                 "content": [
@@ -300,6 +354,7 @@ class TestTextLinks:
         )
 
     def test_monospace_link_keeps_code_span_and_destination(self):
+        """A monospace link retains both its code formatting and destination."""
         doc = {
             "body": {
                 "content": [
@@ -965,6 +1020,7 @@ class TestSmartChips:
         assert "The formula is [Equation]" in md
 
     def test_page_break_marker(self):
+        """Page breaks separate surrounding text with an explicit marker."""
         doc = {
             "title": "Test",
             "body": {
@@ -996,6 +1052,7 @@ class TestSmartChips:
         assert "Before[Page Break]After" in md
 
     def test_column_and_section_break_markers(self):
+        """Structural and inline breaks remain visible in Markdown output."""
         doc = {
             "title": "Test",
             "body": {

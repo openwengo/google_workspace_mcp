@@ -37,9 +37,12 @@ def render_doc_to_plain_text(
 
 
 class _PlainTextRenderer:
+    """Render semantic annotations using each document tab's own metadata."""
+
     def render_document(
         self, doc: dict[str, Any], current_tab_id: str | None = None
     ) -> str:
+        """Combine legacy body content and nested tabs without dropping whitespace."""
         sections: list[str] = []
 
         main_content = self._render_context(doc, current_tab_id=current_tab_id)
@@ -52,6 +55,7 @@ class _PlainTextRenderer:
         return "".join(sections)
 
     def _render_tab(self, tab: dict[str, Any], level: int = 0) -> str:
+        """Label a tab and recursively render its children with indented titles."""
         result: list[str] = []
         document_tab = tab.get("documentTab")
         if document_tab is not None:
@@ -71,6 +75,7 @@ class _PlainTextRenderer:
     def _render_context(
         self, context: dict[str, Any], current_tab_id: str | None
     ) -> str:
+        """Render body and segments, then list positioned objects lacking anchors."""
         referenced_positioned: set[str] = set()
         parts: list[str] = []
 
@@ -132,6 +137,7 @@ class _PlainTextRenderer:
         referenced_positioned: set[str],
         active_footnotes: set[str] | None = None,
     ) -> str:
+        """Append referenced footnotes while preventing cycles in nested references."""
         footnote_refs: list[str] = []
         rendered = self._render_elements(
             content,
@@ -170,6 +176,7 @@ class _PlainTextRenderer:
         referenced_positioned: set[str],
         footnote_refs: list[str],
     ) -> str:
+        """Traverse structural elements and collect object and footnote references."""
         parts: list[str] = []
         for element in elements:
             if "paragraph" in element:
@@ -221,6 +228,7 @@ class _PlainTextRenderer:
         referenced_positioned: set[str],
         footnote_refs: list[str],
     ) -> str:
+        """Preserve text runs and annotate chips, breaks, and anchored objects."""
         parts: list[str] = []
         for element in paragraph.get("elements", []):
             if "textRun" in element:
@@ -316,6 +324,7 @@ class _PlainTextRenderer:
         referenced_positioned: set[str],
         footnote_refs: list[str],
     ) -> str:
+        """Separate cells with tabs and rows with newlines, flattening nested content."""
         rows: list[str] = []
         for row in table.get("tableRows", []):
             cells: list[str] = []
@@ -338,6 +347,7 @@ class _PlainTextRenderer:
         link: dict[str, Any] | None,
         current_tab_id: str | None,
     ) -> str:
+        """Place link annotations before the text run's trailing newlines."""
         target = resolve_link_target(link)
         if not target or not content:
             return content
@@ -356,6 +366,7 @@ class _PlainTextRenderer:
     def _annotate_link(
         label: str, target: LinkTarget, current_tab_id: str | None
     ) -> str:
+        """Append a readable destination, using the current tab for local targets."""
         if target.kind == "url":
             return f"{label} ({target.value})"
         if target.kind in ("heading", "bookmark"):
@@ -368,6 +379,7 @@ class _PlainTextRenderer:
 
     @staticmethod
     def _render_person(person: dict[str, Any]) -> str:
+        """Show a person's available name and email, or an explicit missing marker."""
         props = person.get("personProperties", {})
         name = props.get("name", "")
         email = props.get("email", "")
@@ -381,6 +393,7 @@ class _PlainTextRenderer:
 
     @staticmethod
     def _render_rich_link(rich_link: dict[str, Any]) -> str:
+        """Retain a rich link's title and URI even when only one is available."""
         props = rich_link.get("richLinkProperties", {})
         title = props.get("title", "")
         uri = props.get("uri", "")
@@ -394,6 +407,7 @@ class _PlainTextRenderer:
 
     @staticmethod
     def _render_date(date_element: dict[str, Any]) -> str:
+        """Prefer a date chip's display text, falling back to its timestamp."""
         props = date_element.get("dateElementProperties", {})
         return (
             props.get("displayText")
@@ -408,6 +422,7 @@ class _PlainTextRenderer:
         *,
         object_kind: str,
     ) -> str:
+        """Describe an image from its metadata or identify an unresolved object."""
         obj = objects.get(object_id, {}) if object_id else {}
         properties_key = (
             "inlineObjectProperties"
@@ -430,9 +445,11 @@ class _PlainTextRenderer:
 
     @staticmethod
     def _variant_type(element: dict[str, Any], ignored: set[str]) -> str | None:
+        """Find the element variant while ignoring structural and suggestion fields."""
         return next((key for key in element if key not in ignored), None)
 
     @staticmethod
     def _unsupported_marker(element_type: str) -> str:
+        """Log an unknown variant and retain a visible marker in the output."""
         logger.warning("Unsupported Google Docs element: %s", element_type)
         return f"[Unsupported Google Docs element: {element_type}]"

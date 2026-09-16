@@ -61,6 +61,7 @@ def resolve_link_target(link: dict[str, Any] | None) -> LinkTarget | None:
 
 
 def _internal_target_values(target: Any) -> tuple[str | None, str | None]:
+    """Extract a target ID and optional tab from scalar or nested API fields."""
     if isinstance(target, dict):
         target_id = _as_string(target.get("id"))
         tab_id = _as_string(target.get("tabId"))
@@ -69,6 +70,7 @@ def _internal_target_values(target: Any) -> tuple[str | None, str | None]:
 
 
 def _as_string(value: Any) -> str | None:
+    """Normalize a populated API identifier while treating empty values as absent."""
     if value is None or value == "":
         return None
     return str(value)

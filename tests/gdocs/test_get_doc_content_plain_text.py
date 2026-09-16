@@ -8,6 +8,7 @@ from gdocs import docs_tools
 
 
 def _unwrap(tool):
+    """Unwrap the MCP tool and decorators to exercise its implementation directly."""
     fn = tool.fn if hasattr(tool, "fn") else tool
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
@@ -15,6 +16,7 @@ def _unwrap(tool):
 
 
 def _paragraph(text, link=None):
+    """Build a single-run paragraph with optional link metadata."""
     return {
         "paragraph": {
             "elements": [
@@ -25,6 +27,7 @@ def _paragraph(text, link=None):
 
 
 def _services(doc, mime_type="application/vnd.google-apps.document"):
+    """Mock Drive metadata and Docs content without contacting Google services."""
     drive = Mock()
     drive.files.return_value.get.return_value.execute.return_value = {
         "name": "Notes",
@@ -37,6 +40,7 @@ def _services(doc, mime_type="application/vnd.google-apps.document"):
 
 
 async def _read(doc, **kwargs):
+    """Read a mocked document through the tool with the requested options."""
     drive, docs = _services(doc)
     return await _unwrap(docs_tools.get_doc_content)(
         drive_service=drive,
@@ -50,6 +54,7 @@ async def _read(doc, **kwargs):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("preserve_context", [False, True])
 async def test_link_context_is_opt_in(preserve_context):
+    """Readable destinations appear only when semantic context is requested."""
     doc = {
         "body": {
             "content": [_paragraph("Reference\n", {"url": "https://example.com/ref"})]
@@ -67,6 +72,7 @@ async def test_link_context_is_opt_in(preserve_context):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kwargs", [{}, {"preserve_context": True}])
 async def test_ordinary_text_and_metadata_are_compatible(kwargs):
+    """Both reader modes retain the metadata header and ordinary paragraph spacing."""
     result = await _read(
         {
             "body": {
@@ -88,6 +94,7 @@ async def test_ordinary_text_and_metadata_are_compatible(kwargs):
 
 @pytest.mark.asyncio
 async def test_context_for_nested_selected_tab_includes_segments_and_local_targets():
+    """Selecting a nested tab retains its local targets and excludes parent content."""
     selected = {
         "tabProperties": {"tabId": "t.child", "title": "Child"},
         "documentTab": {
@@ -114,12 +121,14 @@ async def test_context_for_nested_selected_tab_includes_segments_and_local_targe
 
 @pytest.mark.asyncio
 async def test_context_reports_missing_tab():
+    """Context mode returns the existing error for an unknown tab ID."""
     assert "not found" in await _read({}, preserve_context=True, tab_id="missing")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("preserve_context", [False, True])
 async def test_office_extraction_is_unaffected(monkeypatch, preserve_context):
+    """Office downloads use the same extraction path with either context setting."""
     drive, docs = _services(
         {}, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )

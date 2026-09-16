@@ -15,6 +15,7 @@ Converts Google Docs API JSON responses to clean Markdown, preserving:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -413,7 +414,18 @@ def _apply_text_style(
 
     font_family = style.get("weightedFontFamily", {}).get("fontFamily", "")
     if font_family in MONO_FONTS:
-        text = f"`{text}`"
+        delimiter = "`" * (
+            max((len(run) for run in re.findall(r"`+", text)), default=0) + 1
+        )
+        # CommonMark removes one surrounding space pair except for all-space
+        # content. Padding also keeps edge backticks separate from delimiters.
+        if (
+            text.startswith("`")
+            or text.endswith("`")
+            or (text.startswith(" ") and text.endswith(" ") and text.strip(" "))
+        ):
+            text = f" {text} "
+        text = f"{delimiter}{text}{delimiter}"
 
     bold = style.get("bold", False)
     italic = style.get("italic", False)

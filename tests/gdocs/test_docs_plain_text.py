@@ -9,6 +9,7 @@ from gdocs.docs_plain_text import render_doc_to_plain_text
 
 
 def _paragraph(*elements, positioned_object_ids=None):
+    """Build a paragraph with optional positioned-object anchors."""
     paragraph = {"elements": list(elements)}
     if positioned_object_ids is not None:
         paragraph["positionedObjectIds"] = positioned_object_ids
@@ -16,11 +17,13 @@ def _paragraph(*elements, positioned_object_ids=None):
 
 
 def _text(content, *, link=None):
+    """Build a text run with optional link metadata."""
     style = {"link": link} if link is not None else {}
     return {"textRun": {"content": content, "textStyle": style}}
 
 
 def _tab(title, tab_id, content, **document_tab_fields):
+    """Build a tab with body content and optional segment or object metadata."""
     return {
         "tabProperties": {"title": title, "tabId": tab_id},
         "documentTab": {
@@ -32,6 +35,7 @@ def _tab(title, tab_id, content, **document_tab_fields):
 
 class TestCompatibility:
     def test_ordinary_paragraphs_are_byte_for_byte_unchanged(self):
+        """Blank lines, spaces, and split runs survive plain-text rendering."""
         doc = {
             "body": {
                 "content": [
@@ -50,11 +54,13 @@ class TestCompatibility:
 
     @pytest.mark.parametrize("content", ["", "\n", " \t\n"])
     def test_empty_and_whitespace_only_contexts_are_preserved(self, content):
+        """An otherwise empty document retains its exact whitespace content."""
         doc = {"body": {"content": [_paragraph(_text(content))]}}
 
         assert render_doc_to_plain_text(doc) == content
 
     def test_single_and_nested_tabs_keep_existing_marker_format(self):
+        """Nested tabs retain their titles, IDs, and indentation in separators."""
         parent = _tab("Main", "tab-1", [_paragraph(_text("Parent\n"))])
         parent["childTabs"] = [_tab("Details", "tab-2", [_paragraph(_text("Child\n"))])]
 
@@ -68,6 +74,7 @@ class TestCompatibility:
 
 class TestLinkTargets:
     def test_resolver_uses_documented_priority(self):
+        """External URLs take precedence when multiple target fields are present."""
         assert resolve_link_target(
             {
                 "url": "https://example.com",
@@ -78,6 +85,7 @@ class TestLinkTargets:
         ) == LinkTarget("url", "https://example.com")
 
     def test_resolver_supports_new_and_legacy_internal_shapes(self):
+        """Nested and legacy target fields normalize consistently, including tabs."""
         assert resolve_link_target(
             {"heading": {"id": "heading-1", "tabId": "tab-2"}}
         ) == LinkTarget("heading", "heading-1", "tab-2")
@@ -94,6 +102,7 @@ class TestLinkTargets:
         assert resolve_link_target({"unsupported": "target"}) == LinkTarget("unknown")
 
     def test_plain_text_renders_external_and_internal_targets(self):
+        """Link annotations preserve destinations and resolve local tab context."""
         doc = {
             "tabs": [
                 _tab(
@@ -139,6 +148,7 @@ class TestLinkTargets:
 
 class TestContextualElements:
     def test_chips_use_readable_values_and_fallbacks(self):
+        """Person, rich-link, and date chips retain available values and fallbacks."""
         doc = {
             "body": {
                 "content": [
@@ -203,6 +213,7 @@ class TestContextualElements:
         )
 
     def test_inline_positioned_and_unresolved_objects(self):
+        """Images retain descriptions and URIs even when positioned anchors are absent."""
         doc = {
             "inlineObjects": {
                 "inline-1": {
@@ -259,6 +270,7 @@ class TestContextualElements:
         )
 
     def test_dangling_positioned_object_reference_is_explicit(self):
+        """A positioned-object anchor without metadata produces a visible marker."""
         doc = {
             "body": {
                 "content": [
@@ -274,6 +286,7 @@ class TestContextualElements:
         )
 
     def test_headers_footers_and_footnotes_are_labeled(self):
+        """Segment labels and referenced footnote content remain discoverable."""
         tab = _tab(
             "Main",
             "tab-1",
@@ -302,6 +315,7 @@ class TestContextualElements:
         )
 
     def test_table_of_contents_and_nested_table_cells_are_recursive(self):
+        """Recursive structures preserve text and links with readable cell boundaries."""
         nested_table = {
             "table": {
                 "tableRows": [
@@ -354,6 +368,7 @@ class TestContextualElements:
         )
 
     def test_breaks_auto_text_equations_and_private_use_chip(self):
+        """Non-text elements and opaque smart chips produce descriptive placeholders."""
         doc = {
             "body": {
                 "content": [
@@ -379,6 +394,7 @@ class TestContextualElements:
         )
 
     def test_unknown_variants_emit_markers_and_warnings(self, caplog):
+        """Unknown structural and inline variants are visible and logged."""
         doc = {
             "body": {
                 "content": [
