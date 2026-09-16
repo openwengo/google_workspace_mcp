@@ -2,6 +2,8 @@
 
 import logging
 
+import pytest
+
 from gdocs.docs_links import LinkTarget, resolve_link_target
 from gdocs.docs_plain_text import render_doc_to_plain_text
 
@@ -34,13 +36,23 @@ class TestCompatibility:
             "body": {
                 "content": [
                     _paragraph(_text("First paragraph\n")),
+                    _paragraph(_text("\n")),
+                    _paragraph(_text(" \t\n")),
                     _paragraph(_text("Second "), _text("paragraph\n")),
                     _paragraph(_text("\n")),
                 ]
             }
         }
 
-        assert render_doc_to_plain_text(doc) == ("First paragraph\nSecond paragraph\n")
+        assert render_doc_to_plain_text(doc) == (
+            "First paragraph\n\n \t\nSecond paragraph\n\n"
+        )
+
+    @pytest.mark.parametrize("content", ["", "\n", " \t\n"])
+    def test_empty_and_whitespace_only_contexts_are_preserved(self, content):
+        doc = {"body": {"content": [_paragraph(_text(content))]}}
+
+        assert render_doc_to_plain_text(doc) == content
 
     def test_single_and_nested_tabs_keep_existing_marker_format(self):
         parent = _tab("Main", "tab-1", [_paragraph(_text("Parent\n"))])

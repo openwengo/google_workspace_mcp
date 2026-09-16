@@ -68,11 +68,21 @@ async def test_link_context_is_opt_in(preserve_context):
 @pytest.mark.parametrize("kwargs", [{}, {"preserve_context": True}])
 async def test_ordinary_text_and_metadata_are_compatible(kwargs):
     result = await _read(
-        {"body": {"content": [_paragraph("Ordinary text\n")]}}, **kwargs
+        {
+            "body": {
+                "content": [
+                    _paragraph("Ordinary text\n"),
+                    _paragraph("\n"),
+                    _paragraph("Second paragraph\n"),
+                ]
+            }
+        },
+        **kwargs,
     )
     assert result == (
         'File: "Notes" (ID: doc-1, Type: application/vnd.google-apps.document)\n'
-        "Link: https://example.com/doc\n\n--- CONTENT ---\nOrdinary text\n"
+        "Link: https://example.com/doc\n\n--- CONTENT ---\n"
+        "Ordinary text\n\nSecond paragraph\n"
     )
 
 

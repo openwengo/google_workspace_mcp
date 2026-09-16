@@ -43,7 +43,7 @@ class _PlainTextRenderer:
         sections: list[str] = []
 
         main_content = self._render_context(doc, current_tab_id=current_tab_id)
-        if main_content.strip():
+        if main_content:
             sections.append(main_content)
 
         for tab in doc.get("tabs", []):
@@ -180,7 +180,7 @@ class _PlainTextRenderer:
                     referenced_positioned,
                     footnote_refs,
                 )
-                if paragraph.strip():
+                if paragraph:
                     parts.append(paragraph)
             elif "table" in element:
                 if parts and not parts[-1].endswith("\n"):
