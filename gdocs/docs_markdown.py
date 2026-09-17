@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
-from gdocs.docs_links import resolve_link_target
+from gdocs.docs_links import resolve_link_target, text_run_link
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def _convert_body_to_markdown(doc: dict[str, Any]) -> str:
     prev_was_list = False
     footnote_defs: list[tuple[str, str]] = []
 
-    for element in content:
+    for position, element in enumerate(content):
         if "paragraph" in element:
             para = element["paragraph"]
             text = _convert_paragraph_text(
@@ -181,7 +181,9 @@ def _convert_body_to_markdown(doc: dict[str, Any]) -> str:
             )
             lines.append(table_md)
             lines.append("")
-        elif "sectionBreak" in element:
+        # The Docs API opens every body with a section break; only later ones
+        # reflect a break the author inserted.
+        elif "sectionBreak" in element and position > 0:
             lines.append("[Section Break]")
             lines.append("")
 
@@ -204,9 +206,17 @@ def _convert_paragraph_text(
 ) -> str:
     """Convert paragraph elements to inline markdown text."""
     parts: list[str] = []
-    for elem in para.get("elements", []):
+    elements = para.get("elements", [])
+    link_start = 0
+    for position, elem in enumerate(elements):
         if "textRun" in elem:
+            link = text_run_link(elements, position)
+            if text_run_link(elements, position - 1) != link:
+                link_start = len(parts)
             parts.append(_convert_text_run(elem["textRun"], skip_strikethrough))
+            # Link a label split across styled runs once, after its final run.
+            if link and text_run_link(elements, position + 1) != link:
+                parts[link_start:] = [_apply_link("".join(parts[link_start:]), link)]
         elif "person" in elem:
             parts.append(_convert_person_chip(elem["person"]))
         elif "richLink" in elem:
@@ -235,8 +245,6 @@ def _convert_paragraph_text(
             parts.append("[Page Break]")
         elif "columnBreak" in elem:
             parts.append("[Column Break]")
-        elif "sectionBreak" in elem:
-            parts.append("[Section Break]")
         elif "equation" in elem:
             parts.append(_convert_equation(elem["equation"]))
     return "".join(parts).strip()
@@ -410,9 +418,7 @@ def _convert_equation(equation: dict[str, Any]) -> str:
 def _apply_text_style(
     text: str, style: dict[str, Any], skip_strikethrough: bool = False
 ) -> str:
-    """Apply markdown formatting based on text style."""
-    link_target = resolve_link_target(style.get("link"))
-
+    """Apply markdown formatting based on text style, excluding links."""
     font_family = style.get("weightedFontFamily", {}).get("fontFamily", "")
     if font_family in MONO_FONTS:
         delimiter = "`" * (
@@ -442,21 +448,27 @@ def _apply_text_style(
     if strikethrough and not skip_strikethrough:
         text = f"~~{text}~~"
 
-    if link_target:
-        if link_target.kind == "url":
-            destination = link_target.value
-            if re.search(r"[\s()<>\\]", destination):
-                # Angle brackets allow unbalanced parentheses. Encode whitespace
-                # and characters that could escape or close the destination.
-                destination = quote(destination, safe="/:?#[]@!$&'()*+,;=%")
-                destination = f"<{destination}>"
-            text = f"[{text}]({destination})"
-        elif link_target.kind in ("heading", "bookmark"):
-            tab_part = f", tab: {link_target.tab_id}" if link_target.tab_id else ""
-            text = f"{text} [{link_target.kind}: {link_target.value}{tab_part}]"
-        elif link_target.kind == "tab":
-            text = f"{text} [tab: {link_target.value}]"
+    return text
 
+
+def _apply_link(text: str, link: dict[str, Any]) -> str:
+    """Render a link around already-styled label text."""
+    link_target = resolve_link_target(link)
+    if not text or not link_target:
+        return text
+    if link_target.kind == "url":
+        destination = link_target.value
+        if re.search(r"[\s()<>\\]", destination):
+            # Angle brackets allow unbalanced parentheses. Encode whitespace
+            # and characters that could escape or close the destination.
+            destination = quote(destination, safe="/:?#[]@!$&'()*+,;=%")
+            destination = f"<{destination}>"
+        return f"[{text}]({destination})"
+    if link_target.kind in ("heading", "bookmark"):
+        tab_part = f", tab: {link_target.tab_id}" if link_target.tab_id else ""
+        return f"{text} [{link_target.kind}: {link_target.value}{tab_part}]"
+    if link_target.kind == "tab":
+        return f"{text} [tab: {link_target.value}]"
     return text
 
 

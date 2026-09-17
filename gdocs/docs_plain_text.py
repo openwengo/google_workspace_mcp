@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-from gdocs.docs_links import LinkTarget, resolve_link_target
+from gdocs.docs_links import LinkTarget, resolve_link_target, text_run_link
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ class _PlainTextRenderer:
     ) -> str:
         """Traverse structural elements and collect object and footnote references."""
         parts: list[str] = []
-        for element in elements:
+        for position, element in enumerate(elements):
             if "paragraph" in element:
                 paragraph = self._render_paragraph(
                     element.get("paragraph", {}),
@@ -213,7 +213,10 @@ class _PlainTextRenderer:
                     )
                 )
             elif "sectionBreak" in element:
-                parts.append("[Section Break]\n")
+                # The Docs API opens every body with a section break; only later
+                # ones reflect a break the author inserted.
+                if position > 0:
+                    parts.append("[Section Break]\n")
             else:
                 element_type = self._variant_type(element, _STRUCTURAL_METADATA_KEYS)
                 if element_type:
@@ -230,19 +233,21 @@ class _PlainTextRenderer:
     ) -> str:
         """Preserve text runs and annotate chips, breaks, and anchored objects."""
         parts: list[str] = []
-        for element in paragraph.get("elements", []):
+        elements = paragraph.get("elements", [])
+        for position, element in enumerate(elements):
             if "textRun" in element:
                 text_run = element.get("textRun", {})
                 content = text_run.get("content", "").replace(
                     "\ue907", "[Smart Chip: details unavailable from Docs API]"
                 )
-                parts.append(
-                    self._render_linked_text(
-                        content,
-                        text_run.get("textStyle", {}).get("link"),
-                        current_tab_id,
+                link = text_run.get("textStyle", {}).get("link")
+                # Annotate a link split across runs once, after its final run.
+                if link and text_run_link(elements, position + 1) == link:
+                    parts.append(content)
+                else:
+                    parts.append(
+                        self._render_linked_text(content, link, current_tab_id)
                     )
-                )
             elif "person" in element:
                 parts.append(self._render_person(element.get("person", {})))
             elif "richLink" in element:
@@ -282,8 +287,6 @@ class _PlainTextRenderer:
                 parts.append("[Page Break]")
             elif "columnBreak" in element:
                 parts.append("[Column Break]")
-            elif "sectionBreak" in element:
-                parts.append("[Section Break]")
             elif "horizontalRule" in element:
                 parts.append("[Horizontal Rule]")
             elif "autoText" in element:

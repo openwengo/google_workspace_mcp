@@ -60,6 +60,17 @@ def resolve_link_target(link: dict[str, Any] | None) -> LinkTarget | None:
     return LinkTarget("unknown")
 
 
+def text_run_link(elements: list[dict[str, Any]], index: int) -> dict[str, Any] | None:
+    """Return the link of the paragraph element at ``index`` if it is a text run.
+
+    Style changes split one link into several runs, so renderers compare
+    neighboring runs to annotate a link once rather than once per run.
+    """
+    if 0 <= index < len(elements):
+        return elements[index].get("textRun", {}).get("textStyle", {}).get("link")
+    return None
+
+
 def _internal_target_values(target: Any) -> tuple[str | None, str | None]:
     """Extract a target ID and optional tab from scalar or nested API fields."""
     if isinstance(target, dict):

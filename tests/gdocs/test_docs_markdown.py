@@ -434,6 +434,42 @@ class TestTextLinks:
             "[`example()`](https://example.com/api)\n"
         )
 
+    @pytest.mark.parametrize(
+        ("link", "expected"),
+        [
+            ({"url": "https://example.com"}, "[**Ref**erence](https://example.com)\n"),
+            ({"heading": {"id": "h.1"}}, "**Ref**erence [heading: h.1]\n"),
+        ],
+    )
+    def test_link_split_across_style_runs_is_rendered_once(self, link, expected):
+        """Style changes inside a link do not split its label or repeat its target."""
+        doc = {
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {
+                                    "textRun": {
+                                        "content": "Ref",
+                                        "textStyle": {"bold": True, "link": link},
+                                    }
+                                },
+                                {
+                                    "textRun": {
+                                        "content": "erence\n",
+                                        "textStyle": {"link": link},
+                                    }
+                                },
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+
+        assert convert_doc_to_markdown(doc) == expected
+
 
 class TestHeadings:
     def test_title(self):
@@ -1103,7 +1139,7 @@ class TestSmartChips:
         assert "Before[Page Break]After" in md
 
     def test_column_and_section_break_markers(self):
-        """Structural and inline breaks remain visible in Markdown output."""
+        """Authored breaks are visible; the API's leading section break is not."""
         doc = {
             "title": "Test",
             "body": {
@@ -1112,20 +1148,18 @@ class TestSmartChips:
                     {
                         "paragraph": {
                             "elements": [
-                                {
-                                    "textRun": {
-                                        "content": "Before",
-                                        "textStyle": {},
-                                    }
-                                },
+                                {"textRun": {"content": "Before", "textStyle": {}}},
                                 {"columnBreak": {}},
-                                {"sectionBreak": {}},
-                                {
-                                    "textRun": {
-                                        "content": "After\n",
-                                        "textStyle": {},
-                                    }
-                                },
+                                {"textRun": {"content": "After\n", "textStyle": {}}},
+                            ],
+                            "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
+                        }
+                    },
+                    {"sectionBreak": {}},
+                    {
+                        "paragraph": {
+                            "elements": [
+                                {"textRun": {"content": "Next\n", "textStyle": {}}},
                             ],
                             "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"},
                         }
@@ -1135,7 +1169,7 @@ class TestSmartChips:
         }
 
         md = convert_doc_to_markdown(doc)
-        assert md == ("[Section Break]\n\nBefore[Column Break][Section Break]After\n")
+        assert md == "Before[Column Break]After\n\n[Section Break]\n\nNext\n"
 
 
 class TestEmptyDoc:

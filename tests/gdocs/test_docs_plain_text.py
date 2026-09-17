@@ -145,6 +145,28 @@ class TestLinkTargets:
             "Tab [tab: tab-other]\n"
         )
 
+    def test_link_split_across_style_runs_is_annotated_once(self):
+        """A link spanning several styled runs keeps its label contiguous."""
+        link = {"url": "https://example.com/ref"}
+        doc = {
+            "body": {
+                "content": [
+                    _paragraph(
+                        _text("See "),
+                        _text("Ref", link=link),
+                        _text("erence", link=link),
+                        _text(" and "),
+                        _text("Other\n", link={"url": "https://example.com/other"}),
+                    )
+                ]
+            }
+        }
+
+        assert render_doc_to_plain_text(doc) == (
+            "See Reference (https://example.com/ref) and "
+            "Other (https://example.com/other)\n"
+        )
+
 
 class TestContextualElements:
     def test_chips_use_readable_values_and_fallbacks(self):
@@ -377,20 +399,22 @@ class TestContextualElements:
                         _text("Before"),
                         {"pageBreak": {}},
                         {"columnBreak": {}},
-                        {"sectionBreak": {}},
                         {"autoText": {"type": "UNKNOWN_TYPE"}},
                         {"equation": {}},
                         _text("\ue907After\n"),
                     ),
+                    {"sectionBreak": {}},
+                    _paragraph(_text("Next section\n")),
                 ]
             }
         }
 
         assert render_doc_to_plain_text(doc) == (
-            "[Section Break]\n"
-            "Before[Page Break][Column Break][Section Break]"
+            "Before[Page Break][Column Break]"
             "[Auto text: UNKNOWN_TYPE][Equation]"
             "[Smart Chip: details unavailable from Docs API]After\n"
+            "[Section Break]\n"
+            "Next section\n"
         )
 
     def test_unknown_variants_emit_markers_and_warnings(self, caplog):
