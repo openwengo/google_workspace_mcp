@@ -261,11 +261,17 @@ def test_config_does_not_export_credentials_to_environment(monkeypatch):
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "env-id")
     monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "env-secret")
     monkeypatch.setenv("MCP_ENABLE_OAUTH21", "true")
-    before = set(os.environ)
+    before = dict(os.environ)
 
     OAuthConfig()
 
-    assert set(os.environ) - before == set()
+    # Report names only, so a failure cannot print a secret value.
+    changed = sorted(
+        name
+        for name in before.keys() | os.environ.keys()
+        if before.get(name) != os.environ.get(name)
+    )
+    assert changed == []
 
 
 def test_legacy_load_client_secrets_prefers_env(monkeypatch, tmp_path):
