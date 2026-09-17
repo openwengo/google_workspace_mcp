@@ -234,8 +234,21 @@ class TestContextualElements:
             "2026-07-14T00:00:00Z | [Date: details unavailable]\n"
         )
 
-    def test_inline_positioned_and_unresolved_objects(self):
-        """Images retain descriptions and URIs even when positioned anchors are absent."""
+    @pytest.mark.parametrize(
+        ("source_properties", "expected_logo"),
+        [
+            ({}, "[Image: Logo]"),
+            ({"sourceUri": ""}, "[Image: Logo]"),
+            (
+                {"sourceUri": "https://example.com/logo.png"},
+                "[Image: Logo; URI: https://example.com/logo.png]",
+            ),
+        ],
+    )
+    def test_inline_positioned_and_unresolved_objects(
+        self, source_properties, expected_logo
+    ):
+        """Images retain descriptions and source URIs without exposing content URIs."""
         doc = {
             "inlineObjects": {
                 "inline-1": {
@@ -243,7 +256,8 @@ class TestContextualElements:
                         "embeddedObject": {
                             "title": "Logo",
                             "imageProperties": {
-                                "contentUri": "https://example.com/logo.png"
+                                "contentUri": "https://example.com/private-logo.png",
+                                **source_properties,
                             },
                         }
                     }
@@ -259,7 +273,8 @@ class TestContextualElements:
                     "positionedObjectProperties": {
                         "embeddedObject": {
                             "imageProperties": {
-                                "sourceUri": "https://example.com/chart.png"
+                                "sourceUri": "https://example.com/chart.png",
+                                "contentUri": "https://example.com/private-chart.png",
                             }
                         }
                     }
@@ -284,7 +299,7 @@ class TestContextualElements:
         }
 
         assert render_doc_to_plain_text(doc) == (
-            "[Image: Logo; URI: https://example.com/logo.png]\n"
+            f"{expected_logo}\n"
             "See diagram [Image: Diagram]\n"
             "[Inline object missing-inline: details unavailable]\n"
             "\n--- UNRESOLVED POSITIONED OBJECTS ---\n"

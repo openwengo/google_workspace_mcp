@@ -435,7 +435,7 @@ class _PlainTextRenderer:
         embedded = obj.get(properties_key, {}).get("embeddedObject", {})
         title = embedded.get("title") or embedded.get("description") or ""
         image_properties = embedded.get("imageProperties", {})
-        uri = image_properties.get("contentUri") or image_properties.get("sourceUri")
+        uri = image_properties.get("sourceUri")
 
         if title and uri:
             return f"[Image: {title}; URI: {uri}]"

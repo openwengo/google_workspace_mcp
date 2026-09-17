@@ -41,6 +41,7 @@ Comments, revision history, exact visual layout, and chip details hidden by the 
 |-----------|------|----------|---------|-------|
 | user_google_email | string | yes | | |
 | document_id | string | yes | | Doc ID or file ID |
+| tab_id | string | no | | Select a specific Google Docs tab |
 | preserve_context | boolean | no | false | Include readable semantic annotations; output offsets are no longer editing indices |
 
 ### search_docs
