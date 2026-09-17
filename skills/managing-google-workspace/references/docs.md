@@ -33,10 +33,16 @@ Reads a Google Doc and returns it as Markdown, preserving headings, bold/italic/
 ### get_doc_content
 Retrieves plain text content of a Google Doc or a Drive file (.docx, etc.). Native Google Docs use the Docs API; Office files are downloaded and text-extracted via Drive API.
 
+Set `preserve_context=True` to retain readable external-link destinations, internal heading/bookmark/tab targets, smart-chip values, table boundaries, headers, footers, footnotes, and object context exposed by the Docs API. This remains plain text. Its offsets must not be used as document editing indices. The default (`False`) retains the existing index-aligned output. With `tab_id`, context is limited to the selected tab. Office extraction is unaffected.
+
+Comments, revision history, exact visual layout, and chip details hidden by the API are not included. Use `get_doc_as_markdown` for formatting or optional comments.
+
 | Parameter | Type | Required | Default | Notes |
 |-----------|------|----------|---------|-------|
 | user_google_email | string | yes | | |
 | document_id | string | yes | | Doc ID or file ID |
+| tab_id | string | no | | Select a specific Google Docs tab |
+| preserve_context | boolean | no | false | Include readable semantic annotations; output offsets are no longer editing indices |
 
 ### search_docs
 Searches for Google Docs by name using Drive API (mimeType filter).
@@ -343,7 +349,7 @@ Use `list_type='NONE'` in `create_bullet_list` to remove existing list formattin
 
 **Formatting without changing text**: Call `modify_doc_text` with `start_index` and `end_index` but omit `text` to apply formatting (bold, italic, color, etc.) to existing content.
 
-**Prefer get_doc_as_markdown for reading**: It preserves formatting structure (headings, lists, bold, links) while `get_doc_content` returns plain text only. Use `get_doc_content` when you need raw text or are reading non-Google-Docs files.
+**Choose the reader by output**: `get_doc_as_markdown` preserves formatting and can include comments. `get_doc_content` defaults to index-aligned text for editing; set `preserve_context=True` for readable link/chip targets and document segments. It also supports non-Google-Docs files.
 
 **Tab operations**: Use `inspect_doc_structure` (without `tab_id`) to discover available tabs and their IDs. Then pass `tab_id` to editing tools or to `inspect_doc_structure` again to get structure within a specific tab.
 
