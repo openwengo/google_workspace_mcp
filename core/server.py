@@ -25,6 +25,10 @@ from auth.oauth_config import (
     is_trust_gateway_identity,
 )
 from auth.oauth_proxy_config import get_oauth_proxy_expiry_kwargs
+from auth.provider_context import (
+    AuthProviderContextMiddleware,
+    get_request_auth_provider,
+)
 from auth.oauth_responses import (
     create_error_response,
     create_success_response,
@@ -52,9 +56,6 @@ logger = logging.getLogger(__name__)
 
 _auth_provider: Optional[GoogleProvider] = None
 _legacy_callback_registered = False
-
-session_middleware = Middleware(MCPSessionMiddleware)
-
 
 # Schemes whose origins are trusted by the scheme alone. The Origin header is a
 # browser-forbidden header, so a remote web page (the DNS-rebinding threat this
@@ -256,7 +257,13 @@ class SecureFastMCP(FastMCP):
         app.user_middleware.insert(1, origin_validation_middleware)
 
         # Session Management - extracts session info for MCP context
-        app.user_middleware.insert(2, session_middleware)
+        app.user_middleware.insert(
+            2,
+            Middleware(MCPSessionMiddleware, mcp_path=kwargs.get("path") or "/mcp"),
+        )
+        app.user_middleware.insert(
+            3, Middleware(AuthProviderContextMiddleware, provider=self.auth)
+        )
 
         # Rebuild middleware stack
         app.middleware_stack = app.build_middleware_stack()
@@ -264,6 +271,10 @@ class SecureFastMCP(FastMCP):
             "Added middleware stack: WellKnownCacheControl, OriginValidation, "
             "Session Management"
         )
+        if self is server:
+            from core.tool_profiles import build_profile_http_app
+
+            return build_profile_http_app(self, app, **kwargs)
         return app
 
     async def list_tools(self, *, run_middleware: bool = True):
@@ -421,6 +432,39 @@ def _ensure_legacy_callback_route() -> None:
     _legacy_callback_registered = True
 
 
+def create_google_auth_provider(*, config, base_url, client_storage, jwt_signing_key):
+    """Build the standard OAuth proxy consistently for full and specialized URLs."""
+    valid_scopes = sorted(get_current_scopes())
+    allowed_client_redirect_uris = _parse_allowed_redirect_uris(
+        os.getenv("WORKSPACE_MCP_ALLOWED_CLIENT_REDIRECT_URIS")
+    )
+    if allowed_client_redirect_uris:
+        logger.info(
+            "OAuth 2.1: restricting DCR client redirect URIs to allowlist: %s",
+            allowed_client_redirect_uris,
+        )
+    provider = GoogleProvider(
+        client_id=config.client_id,
+        client_secret=config.client_secret,
+        base_url=base_url,
+        redirect_path=config.redirect_path,
+        required_scopes=sorted(PROTOCOL_AUTH_SCOPES),
+        valid_scopes=valid_scopes,
+        client_storage=client_storage,
+        jwt_signing_key=jwt_signing_key,
+        allowed_client_redirect_uris=allowed_client_redirect_uris,
+        **get_oauth_proxy_expiry_kwargs(),
+    )
+    if provider.client_registration_options is not None:
+        provider.client_registration_options.default_scopes = valid_scopes
+    # CIMD clients can bypass DCR defaults; retain the same consent scopes.
+    provider._default_scope_str = " ".join(valid_scopes)
+    cimd_manager = getattr(provider, "_cimd_manager", None)
+    if cimd_manager is not None:
+        cimd_manager.default_scope = provider._default_scope_str
+    return provider
+
+
 def configure_server_for_http():
     """
     Configures the authentication provider for HTTP transport.
@@ -493,7 +537,6 @@ def configure_server_for_http():
             from fastmcp.server.auth.jwt_issuer import derive_jwt_key
 
             provider_valid_scopes: List[str] = sorted(get_current_scopes())
-            provider_required_scopes: List[str] = sorted(PROTOCOL_AUTH_SCOPES)
 
             client_storage = None
             jwt_signing_key_override = (
@@ -720,8 +763,6 @@ def configure_server_for_http():
                     jwt_signing_key_override, config.client_secret
                 )
 
-            expiry_kwargs = get_oauth_proxy_expiry_kwargs()
-
             # Check if external OAuth provider is configured
             if config.is_external_oauth21_provider():
                 # External OAuth mode: use custom provider that handles ya29.* access tokens
@@ -735,7 +776,7 @@ def configure_server_for_http():
                     required_scopes=provider_valid_scopes,
                     resource_server_url=config.get_oauth_base_url(),
                     jwt_signing_key=jwt_signing_key,
-                    **expiry_kwargs,
+                    **get_oauth_proxy_expiry_kwargs(),
                 )
                 server.auth = provider
 
@@ -747,41 +788,12 @@ def configure_server_for_http():
                     "Protected resource metadata points to Google's authorization server"
                 )
             else:
-                # Standard OAuth 2.1 mode: use FastMCP's GoogleProvider
-                allowed_client_redirect_uris = _parse_allowed_redirect_uris(
-                    os.getenv("WORKSPACE_MCP_ALLOWED_CLIENT_REDIRECT_URIS")
-                )
-                if allowed_client_redirect_uris:
-                    logger.info(
-                        "OAuth 2.1: restricting DCR client redirect URIs to allowlist: %s",
-                        allowed_client_redirect_uris,
-                    )
-                provider = GoogleProvider(
-                    client_id=config.client_id,
-                    client_secret=config.client_secret,
+                provider = create_google_auth_provider(
+                    config=config,
                     base_url=config.get_oauth_base_url(),
-                    redirect_path=config.redirect_path,
-                    required_scopes=provider_required_scopes,
-                    valid_scopes=provider_valid_scopes,
                     client_storage=client_storage,
                     jwt_signing_key=jwt_signing_key,
-                    allowed_client_redirect_uris=allowed_client_redirect_uris,
-                    **expiry_kwargs,
                 )
-                if provider.client_registration_options is not None:
-                    # Keep protocol-level auth limited to base identity scopes, but
-                    # allow dynamically registered MCP clients to request any scope
-                    # needed by enabled tools during subsequent authorization flows.
-                    provider.client_registration_options.default_scopes = (
-                        provider_valid_scopes
-                    )
-                # CIMD clients can bypass DCR defaults and fall back to FastMCP's
-                # internal scope string, so keep it aligned with valid scopes too.
-                cimd_default_scope = " ".join(provider_valid_scopes)
-                provider._default_scope_str = cimd_default_scope
-                cimd_manager = getattr(provider, "_cimd_manager", None)
-                if cimd_manager is not None:
-                    cimd_manager.default_scope = cimd_default_scope
                 # Enable protocol-level auth
                 server.auth = provider
                 logger.info(
@@ -809,8 +821,8 @@ def configure_server_for_http():
 
 
 def get_auth_provider() -> Optional[GoogleProvider]:
-    """Gets the global authentication provider instance."""
-    return _auth_provider
+    """Get this request's provider, or the default outside HTTP requests."""
+    return get_request_auth_provider(_auth_provider)
 
 
 def close_auth_provider() -> None:

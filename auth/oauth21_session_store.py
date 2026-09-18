@@ -24,6 +24,7 @@ from fastmcp.server.auth import AccessToken
 from fastmcp.server.dependencies import get_http_headers
 from google.oauth2.credentials import Credentials
 from auth.oauth_config import is_external_oauth21_provider
+from auth.provider_context import get_request_auth_provider
 
 logger = logging.getLogger(__name__)
 
@@ -1023,8 +1024,8 @@ def set_auth_provider(provider):
 
 
 def get_auth_provider():
-    """Get the global auth provider instance."""
-    return _auth_provider
+    """Get the current endpoint's provider, or the default outside HTTP requests."""
+    return get_request_auth_provider(_auth_provider)
 
 
 def _resolve_client_credentials() -> Tuple[Optional[str], Optional[str]]:
@@ -1032,9 +1033,10 @@ def _resolve_client_credentials() -> Tuple[Optional[str], Optional[str]]:
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
 
-    if _auth_provider:
-        client_id = getattr(_auth_provider, "_upstream_client_id", None)
-        secret_obj = getattr(_auth_provider, "_upstream_client_secret", None)
+    provider = get_auth_provider()
+    if provider:
+        client_id = getattr(provider, "_upstream_client_id", None)
+        secret_obj = getattr(provider, "_upstream_client_secret", None)
         if secret_obj is not None:
             if hasattr(secret_obj, "get_secret_value"):
                 try:
@@ -1095,7 +1097,7 @@ async def _build_credentials_from_provider() -> Optional[Credentials]:
     Google token directly, so callers fall back to a minimal, non-refreshable
     credential.
     """
-    provider = _auth_provider
+    provider = get_auth_provider()
     jti_store = getattr(provider, "_jti_mapping_store", None)
     upstream_store = getattr(provider, "_upstream_token_store", None)
     if jti_store is None or upstream_store is None:
@@ -1272,7 +1274,7 @@ def store_token_session(
     Returns:
         Session ID
     """
-    if not _auth_provider:
+    if not get_auth_provider():
         logger.error("Auth provider not configured")
         return ""
 

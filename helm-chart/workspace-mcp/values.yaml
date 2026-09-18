@@ -138,6 +138,18 @@ tools:
 # Leave empty to use default or tools.enabled configuration
 toolTier: ""
 
+# Specialized MCP hostnames served by this same deployment. Each profile selects
+# services up to its tier (default complete), plus optional explicit tool names.
+# Requires built-in OAuth 2.1; add each hostname to ingress.hosts and its callback
+# URL to the Google OAuth client. See docs/tool-profiles.md.
+mcpProfiles: {}
+  # docs:
+  #   name: Google Docs
+  #   url: https://docs-mcp.example.com/mcp
+  #   services: [docs]
+  #   tier: complete
+  #   tools: [search_drive_files, get_drive_shareable_link, import_to_google_doc]
+
 # Single-user mode configuration
 singleUserMode: false
 

@@ -1,6 +1,9 @@
 {{- if and .Values.persistence.enabled (eq .Values.persistence.accessMode "ReadWriteOnce") (or .Values.autoscaling.enabled (gt (int .Values.replicaCount) 1)) }}
 {{- fail "persistence.accessMode=ReadWriteOnce can only attach to one pod: set replicaCount=1 and autoscaling.enabled=false, or use a ReadWriteMany volume." }}
 {{- end }}
+{{- if and .Values.mcpProfiles (hasKey .Values.env "WORKSPACE_MCP_TOOL_PROFILES") }}
+{{- fail "Set mcpProfiles or env.WORKSPACE_MCP_TOOL_PROFILES, not both." }}
+{{- end }}
 {{- $oauthSecretName := include "workspace-mcp.oauthSecretName" . }}
 {{- $healthCheck := .Values.healthCheck | default (dict) }}
 {{- $startupProbe := .Values.startupProbe | default (dict) }}
@@ -120,6 +123,10 @@ spec:
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.mcpProfiles }}
+            - name: WORKSPACE_MCP_TOOL_PROFILES
+              value: {{ . | toJson | quote }}
             {{- end }}
           {{- if .Values.command.override }}
           command: {{ .Values.command.override }}

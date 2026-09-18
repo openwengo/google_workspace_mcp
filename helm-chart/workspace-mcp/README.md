@@ -116,6 +116,14 @@ helm install workspace-mcp ./helm-chart/workspace-mcp \
   --set secrets.googleOAuth.existingSecretName="workspace-mcp-oauth"
 ```
 
+### Specialized MCP URLs in one deployment
+
+Set `mcpProfiles` to select tools for each public hostname, and add those hostnames
+to `ingress.hosts`. The existing full endpoint remains available. Each hostname
+has its own OAuth identity and isolated collections in the existing token store.
+See [tool profiles](../../docs/tool-profiles.md) for configuration, Google callback
+registration, client setup, and rollout requirements.
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `workspace-mcp` deployment:

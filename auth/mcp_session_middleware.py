@@ -27,6 +27,10 @@ class MCPSessionMiddleware(BaseHTTPMiddleware):
     available to MCP tool functions via context variables.
     """
 
+    def __init__(self, app, mcp_path: str = "/mcp"):
+        super().__init__(app)
+        self.mcp_path = mcp_path
+
     async def dispatch(self, request: Request, call_next: Callable) -> Any:
         """Process request and set session context."""
 
@@ -35,7 +39,7 @@ class MCPSessionMiddleware(BaseHTTPMiddleware):
         )
 
         # Skip non-MCP paths
-        if not request.url.path.startswith("/mcp"):
+        if not request.url.path.startswith(self.mcp_path):
             logger.debug(f"Skipping non-MCP path: {request.url.path}")
             return await call_next(request)
 
