@@ -13,6 +13,7 @@ from fastmcp.server.http import StarletteWithLifespan
 from starlette.routing import Host, Route
 
 from auth.oauth_config import get_oauth_config
+from auth.scopes import BASE_SCOPES
 from core.tool_registry import get_tool_components
 from core.tool_tier_loader import ToolTierLoader
 
@@ -155,6 +156,20 @@ def select_profile_tools(profile: ToolProfile, available: dict) -> list:
     return selected
 
 
+def get_profile_scopes(tools: list) -> list[str]:
+    """Include identity and the API scopes declared by the selected tool functions.
+
+    Service decorators also record dependencies on other APIs, such as Drive
+    comments on a document. Reading the filtered tools avoids requesting scopes
+    for tools excluded by a tier, read-only mode, permissions or the block list.
+    """
+    scopes = set(BASE_SCOPES)
+    for tool in tools:
+        fn = getattr(tool, "fn", tool)
+        scopes.update(getattr(fn, "_required_google_scopes", []))
+    return sorted(scopes)
+
+
 def build_profile_http_app(source, default_app, **http_kwargs):
     """Compose independently authenticated MCP applications behind Host routes."""
     profiles = load_tool_profiles()
@@ -211,6 +226,7 @@ def build_profile_http_app(source, default_app, **http_kwargs):
                 source.auth._client_storage, f"profile_{profile.key}"
             ),
             jwt_signing_key=source.auth._jwt_signing_key,
+            scopes=get_profile_scopes(tools),
         )
         view = SecureFastMCP(
             name=profile.name,

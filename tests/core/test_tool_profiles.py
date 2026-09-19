@@ -10,15 +10,29 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
+from fastmcp.server.auth.oauth_proxy.models import (
+    JTIMapping,
+    ProxyDCRClient,
+    UpstreamTokenSet,
+)
 from key_value.aio.stores.memory import MemoryStore
+from mcp.server.auth.provider import AuthorizationParams, AuthorizeError
+from pydantic import AnyUrl
 
 import auth.oauth21_session_store as session_store
 import core.server as server_module
 from auth.provider_context import get_request_auth_provider
-from auth.scopes import PROTOCOL_AUTH_SCOPES
+from auth.scopes import (
+    BASE_SCOPES,
+    DOCS_READONLY_SCOPE,
+    DOCS_WRITE_SCOPE,
+    DRIVE_READONLY_SCOPE,
+    GMAIL_SEND_SCOPE,
+    SHEETS_READONLY_SCOPE,
+)
 from core.server import SecureFastMCP, create_google_auth_provider
 from core.tool_profiles import PROFILES_ENV, load_tool_profiles
+from core.tool_registry import get_tool_components
 
 
 PROFILES = {
@@ -65,6 +79,9 @@ def configured_server(monkeypatch):
         await asyncio.sleep(0)
         credentials = await session_store._build_credentials_from_provider()
         assert session_store.get_auth_provider() is server_module.get_auth_provider()
+        assert set(credentials.scopes) == set(
+            server_module.get_auth_provider().client_registration_options.valid_scopes
+        )
         return credentials.refresh_token
 
     @source.tool
@@ -81,11 +98,20 @@ def configured_server(monkeypatch):
     async def send_gmail_message():
         raise AssertionError("An excluded tool must never execute")
 
+    for name, scopes in {
+        "get_doc_content": [DOCS_READONLY_SCOPE],
+        "create_doc": [DOCS_WRITE_SCOPE],
+        "read_sheet_values": [SHEETS_READONLY_SCOPE],
+        "send_gmail_message": [GMAIL_SEND_SCOPE],
+    }.items():
+        get_tool_components(source)[name].fn._required_google_scopes = scopes
+
     return source, config
 
 
 async def seed_token(provider, identity):
     now = time.time()
+    scopes = provider.client_registration_options.default_scopes
     # Deliberately identical keys: only endpoint namespaces separate these records.
     upstream = UpstreamTokenSet(
         upstream_token_id="same-upstream-id",
@@ -94,7 +120,7 @@ async def seed_token(provider, identity):
         refresh_token_expires_at=None,
         expires_at=now + 3600,
         token_type="Bearer",
-        scope=" ".join(sorted(PROTOCOL_AUTH_SCOPES)),
+        scope=" ".join(scopes),
         client_id="test-client",
         created_at=now,
     )
@@ -109,13 +135,13 @@ async def seed_token(provider, identity):
         return_value=AccessToken(
             token=upstream.access_token,
             client_id="test-client",
-            scopes=sorted(PROTOCOL_AUTH_SCOPES),
+            scopes=scopes,
             expires_at=int(now + 3600),
             claims={"email": "user@example.com"},
         )
     )
     return provider.jwt_issuer.issue_access_token(
-        client_id="test-client", scopes=sorted(PROTOCOL_AUTH_SCOPES), jti="same-jti"
+        client_id="test-client", scopes=scopes, jti="same-jti"
     )
 
 
@@ -372,3 +398,206 @@ async def test_custom_endpoint_path(configured_server, monkeypatch):
                 "https://docs.example.test/.well-known/oauth-protected-resource/com"
             )
             assert metadata.json()["resource"] == "https://docs.example.test/com"
+
+
+async def approve_consent(client, provider, location):
+    """Follow local browser consent and return the Google redirect parameters."""
+    page = await client.get(location)
+    assert page.status_code == 200, page.text
+    txn_id = parse_qs(urlsplit(location).query)["txn_id"][0]
+    transaction = await provider._transaction_store.get(key=txn_id)
+    response = await client.post(
+        str(provider.base_url).rstrip("/") + "/consent",
+        data={
+            "txn_id": txn_id,
+            "csrf_token": transaction.csrf_token,
+            "action": "approve",
+        },
+    )
+    assert response.status_code == 302, response.text
+    target = urlsplit(response.headers["location"])
+    assert target.hostname == "accounts.google.com"
+    return parse_qs(target.query)
+
+
+@pytest.mark.asyncio
+async def test_profile_discovery_registration_and_google_consent_scopes(
+    configured_server,
+):
+    source, _ = configured_server
+    full_scopes = set(source.auth.client_registration_options.valid_scopes)
+    app = source.http_app(stateless_http=True)
+    expected = {
+        "docs": set(BASE_SCOPES) | {DOCS_READONLY_SCOPE, DOCS_WRITE_SCOPE},
+        "sheets": set(BASE_SCOPES) | {SHEETS_READONLY_SCOPE},
+        "full": full_scopes,
+    }
+    etags = set()
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app)) as client:
+            for name, scopes in expected.items():
+                provider = (
+                    source.auth
+                    if name == "full"
+                    else app.state.profile_servers[name].auth
+                )
+                origin = f"https://{name}.example.test"
+                for path in (
+                    "/.well-known/oauth-protected-resource/mcp",
+                    "/.well-known/oauth-authorization-server",
+                ):
+                    discovery = await client.get(origin + path)
+                    assert set(discovery.json()["scopes_supported"]) == scopes
+                    etags.add(discovery.headers["etag"])
+                registration = await client.post(
+                    origin + "/register",
+                    json={
+                        "redirect_uris": ["https://client.example.test/callback"],
+                        "token_endpoint_auth_method": "none",
+                    },
+                )
+                assert registration.status_code == 201, registration.text
+                assert set(registration.json()["scope"].split()) == scopes
+                assert set(provider._cimd_manager.default_scope.split()) == scopes
+                authorized = await client.get(
+                    origin + "/authorize",
+                    params={
+                        "client_id": registration.json()["client_id"],
+                        "redirect_uri": "https://client.example.test/callback",
+                        "response_type": "code",
+                        "code_challenge": "a" * 43,
+                        "code_challenge_method": "S256",
+                        **(
+                            {"scope": " ".join(sorted(scopes))}
+                            if name == "full"
+                            else {}
+                        ),
+                    },
+                )
+                assert authorized.status_code == 302, authorized.text
+                google = await approve_consent(
+                    client, provider, authorized.headers["location"]
+                )
+                assert set(google["scope"][0].split()) == scopes
+                assert google["access_type"] == ["offline"]
+                assert google["prompt"] == ["consent"]
+                if name != "full":
+                    assert google["include_granted_scopes"] == ["false"]
+    assert len(etags) == 3
+    assert set(source.auth.client_registration_options.valid_scopes) == full_scopes
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", ["existing_registration", "cimd"])
+async def test_old_and_cimd_clients_cannot_expand_profile_consent(
+    configured_server, client_type
+):
+    source, _ = configured_server
+    app = source.http_app(stateless_http=True)
+    provider = app.state.profile_servers["docs"].auth
+    scoped = set(BASE_SCOPES) | {DOCS_READONLY_SCOPE, DOCS_WRITE_SCOPE}
+    registered = ProxyDCRClient(
+        client_id=(
+            "https://client.example.test/metadata.json"
+            if client_type == "cimd"
+            else "client-registered-before-profile-scopes"
+        ),
+        redirect_uris=[AnyUrl("https://client.example.test/callback")],
+        scope=" ".join(sorted(scoped | {GMAIL_SEND_SCOPE})),
+        token_endpoint_auth_method="none",
+    )
+    if client_type == "cimd":
+        provider._cimd_manager.get_client = AsyncMock(return_value=registered)
+    else:
+        await provider._client_store.put(key=registered.client_id, value=registered)
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app)) as client:
+            params = {
+                "client_id": registered.client_id,
+                "redirect_uri": "https://client.example.test/callback",
+                "response_type": "code",
+                "code_challenge": "a" * 43,
+                "code_challenge_method": "S256",
+            }
+            authorized = await client.get(
+                "https://docs.example.test/authorize", params=params
+            )
+            assert authorized.status_code == 302, authorized.text
+            google = await approve_consent(
+                client, provider, authorized.headers["location"]
+            )
+            assert set(google["scope"][0].split()) == scoped
+            narrower = set(BASE_SCOPES) | {DOCS_READONLY_SCOPE}
+            limited = await client.get(
+                "https://docs.example.test/authorize",
+                params={**params, "scope": " ".join(sorted(narrower))},
+            )
+            assert limited.status_code == 302, limited.text
+            google = await approve_consent(
+                client, provider, limited.headers["location"]
+            )
+            assert set(google["scope"][0].split()) == narrower
+            rejected = await client.get(
+                "https://docs.example.test/authorize",
+                params={**params, "scope": GMAIL_SEND_SCOPE},
+            )
+            assert rejected.status_code == 302
+            error = parse_qs(urlsplit(rejected.headers["location"]).query)
+            assert error["error"] == ["invalid_scope"]
+
+            registration = await client.post(
+                "https://docs.example.test/register",
+                json={
+                    "redirect_uris": ["https://client.example.test/callback"],
+                    "scope": GMAIL_SEND_SCOPE,
+                },
+            )
+            assert registration.status_code == 400
+            assert registration.json()["error"] == "invalid_client_metadata"
+            assert GMAIL_SEND_SCOPE in registration.json()["error_description"]
+    # Scope restriction is local to the lookup, not a destructive storage rewrite.
+    stored = await provider._client_store.get(key=registered.client_id)
+    assert GMAIL_SEND_SCOPE in stored.scope.split()
+    with pytest.raises(AuthorizeError) as error:
+        await provider.authorize(
+            registered,
+            AuthorizationParams(
+                scopes=[GMAIL_SEND_SCOPE],
+                state=None,
+                code_challenge="a" * 43,
+                redirect_uri=registered.redirect_uris[0],
+                redirect_uri_provided_explicitly=True,
+            ),
+        )
+    assert error.value.error == "invalid_scope"
+
+
+@pytest.mark.parametrize("selection", ["service", "explicit_tools"])
+def test_profile_scopes_follow_filtered_tools_and_cross_service_dependencies(
+    configured_server, monkeypatch, selection
+):
+    source, _ = configured_server
+    source.local_provider.remove_tool("create_doc")
+
+    @source.tool
+    async def search_drive_files():
+        return "files"
+
+    get_tool_components(source)["search_drive_files"].fn._required_google_scopes = [
+        DRIVE_READONLY_SCOPE
+    ]
+    profile = {
+        "url": "https://docs.example.test/mcp",
+        "tools": ["search_drive_files"],
+    }
+    if selection == "service":
+        profile["services"] = ["docs"]
+    else:
+        profile["tools"].append("get_doc_content")
+    monkeypatch.setenv(PROFILES_ENV, json.dumps({"docs": profile}))
+    app = source.http_app(stateless_http=True)
+    provider = app.state.profile_servers["docs"].auth
+    assert set(provider.client_registration_options.valid_scopes) == set(
+        BASE_SCOPES
+    ) | {DOCS_READONLY_SCOPE, DRIVE_READONLY_SCOPE}

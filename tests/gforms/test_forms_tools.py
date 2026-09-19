@@ -20,6 +20,38 @@ from gforms.forms_tools import (
 )
 
 
+def test_readonly_form_tools_keep_response_access_in_profile(monkeypatch):
+    from fastmcp import FastMCP
+
+    from auth.scopes import (
+        BASE_SCOPES,
+        FORMS_BODY_READONLY_SCOPE,
+        FORMS_RESPONSES_READONLY_SCOPE,
+    )
+    from core.tool_profiles import get_profile_scopes
+    from core.tool_registry import filter_server_tools, get_tool_components
+    from gforms.forms_tools import (
+        create_form,
+        get_form_response,
+        list_form_responses,
+    )
+
+    source = FastMCP("Read-only Forms")
+    for function in (get_form, get_form_response, list_form_responses, create_form):
+        source.tool()(function)
+    monkeypatch.setattr("core.tool_registry.is_read_only_mode", lambda: True)
+    monkeypatch.setattr("core.tool_registry.is_permissions_mode", lambda: False)
+    monkeypatch.setattr("core.tool_registry.get_enabled_tools", lambda: None)
+    monkeypatch.setattr("core.tool_registry.get_disabled_tools", lambda: set())
+    filter_server_tools(source)
+    tools = get_tool_components(source)
+    assert set(tools) == {"get_form", "get_form_response", "list_form_responses"}
+    assert set(get_profile_scopes(list(tools.values()))) == set(BASE_SCOPES) | {
+        FORMS_BODY_READONLY_SCOPE,
+        FORMS_RESPONSES_READONLY_SCOPE,
+    }
+
+
 @pytest.mark.asyncio
 async def test_batch_update_form_multiple_requests():
     """Test batch update with multiple requests returns formatted results"""

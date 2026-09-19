@@ -208,8 +208,9 @@ origin_validation_middleware = Middleware(OriginValidationMiddleware)
 class WellKnownCacheControlMiddleware:
     """Force no-cache headers for OAuth well-known discovery endpoints."""
 
-    def __init__(self, app):
+    def __init__(self, app, scopes=None):
         self.app = app
+        self.scopes = scopes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -231,18 +232,15 @@ class WellKnownCacheControlMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(raw=message.setdefault("headers", []))
                 headers["Cache-Control"] = "no-store, must-revalidate"
-                headers["ETag"] = f'"{_compute_scope_fingerprint()}"'
+                headers["ETag"] = f'"{_compute_scope_fingerprint(self.scopes)}"'
             await send(message)
 
         await self.app(scope, receive, send_with_no_cache_headers)
 
 
-well_known_cache_control_middleware = Middleware(WellKnownCacheControlMiddleware)
-
-
-def _compute_scope_fingerprint() -> str:
+def _compute_scope_fingerprint(scopes=None) -> str:
     """Compute a short hash of the current scope configuration for cache-busting."""
-    scopes_str = ",".join(sorted(get_current_scopes()))
+    scopes_str = ",".join(sorted(get_current_scopes() if scopes is None else scopes))
     return hashlib.sha256(scopes_str.encode()).hexdigest()[:12]
 
 
@@ -253,7 +251,14 @@ class SecureFastMCP(FastMCP):
         app = super().http_app(**kwargs)
 
         # Add middleware in order (first added = outermost layer)
-        app.user_middleware.insert(0, well_known_cache_control_middleware)
+        registration = getattr(self.auth, "client_registration_options", None)
+        app.user_middleware.insert(
+            0,
+            Middleware(
+                WellKnownCacheControlMiddleware,
+                scopes=getattr(registration, "valid_scopes", None),
+            ),
+        )
         app.user_middleware.insert(1, origin_validation_middleware)
 
         # Session Management - extracts session info for MCP context
@@ -432,9 +437,16 @@ def _ensure_legacy_callback_route() -> None:
     _legacy_callback_registered = True
 
 
-def create_google_auth_provider(*, config, base_url, client_storage, jwt_signing_key):
+def create_google_auth_provider(
+    *, config, base_url, client_storage, jwt_signing_key, scopes=None
+):
     """Build the standard OAuth proxy consistently for full and specialized URLs."""
-    valid_scopes = sorted(get_current_scopes())
+    provider_class = GoogleProvider
+    if scopes is not None:
+        from auth.profile_google_provider import ProfileGoogleProvider
+
+        provider_class = ProfileGoogleProvider
+    valid_scopes = sorted(set(get_current_scopes() if scopes is None else scopes))
     allowed_client_redirect_uris = _parse_allowed_redirect_uris(
         os.getenv("WORKSPACE_MCP_ALLOWED_CLIENT_REDIRECT_URIS")
     )
@@ -443,7 +455,7 @@ def create_google_auth_provider(*, config, base_url, client_storage, jwt_signing
             "OAuth 2.1: restricting DCR client redirect URIs to allowlist: %s",
             allowed_client_redirect_uris,
         )
-    provider = GoogleProvider(
+    provider = provider_class(
         client_id=config.client_id,
         client_secret=config.client_secret,
         base_url=base_url,
@@ -453,6 +465,11 @@ def create_google_auth_provider(*, config, base_url, client_storage, jwt_signing
         client_storage=client_storage,
         jwt_signing_key=jwt_signing_key,
         allowed_client_redirect_uris=allowed_client_redirect_uris,
+        # Keep a profile's new authorization from explicitly accumulating scopes
+        # previously granted to other profiles sharing this Google OAuth client.
+        extra_authorize_params=(
+            {"include_granted_scopes": "false"} if scopes is not None else None
+        ),
         **get_oauth_proxy_expiry_kwargs(),
     )
     if provider.client_registration_options is not None:

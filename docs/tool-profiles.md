@@ -78,11 +78,54 @@ from Docs are rejected by Sheets and by the full endpoint. Each profile uses
 full endpoint's prefix, keys and audience are unchanged. Keep profile keys stable
 to preserve registrations and refresh tokens across replicas and restarts.
 
-The Google client ID/secret, encryption key, storage connection and configured
-Google consent scopes are shared. Profiles reduce the tools an agent can use;
-they do not independently reduce the Google scopes requested at consent.
+The Google client ID/secret, encryption key and storage connection are shared.
 Each new MCP connector has its own OAuth authorization flow. The current full
-connector keeps its existing registrations and tokens.
+connector keeps its existing registrations, tokens and configured scope set.
+
+### Google permissions per profile
+
+Each profile automatically requests identity scopes (`openid`, `userinfo.email`
+and `userinfo.profile`) plus the Google API scopes declared by its selected tools.
+Scopes are derived after global tool filtering, so tiers, read-only mode,
+permissions and blocked tools also narrow profile consent. Explicit extra tools
+contribute their own scopes. No additional profile settings are needed.
+
+Discovery metadata, default client registration, CIMD defaults and the Google
+authorization redirect use that profile's scope set. Requests for scopes outside
+the profile are rejected, including from older registrations or CIMD documents
+that list broader permissions. Existing registration records are preserved;
+their effective scopes are limited when used for a new authorization.
+
+For the complete production profiles, API permissions are:
+
+| Profile | Google API permissions |
+| --- | --- |
+| Gmail | Gmail reading, sending, drafts, labels and filters |
+| Drive | Read files and manage files created/opened with this OAuth application (`drive.readonly`, `drive.file`) |
+| Calendar | Calendar and event access |
+| Forms | Form content and reading responses |
+| Docs | Documents plus Drive access for search, import, export and comments |
+| Sheets | Spreadsheets plus Drive access for search, import and comments |
+| Slides | Presentations plus Drive access for comments |
+
+The comment-management tools (`manage_document_comment`,
+`manage_spreadsheet_comment`, `manage_presentation_comment`) currently require
+the full `drive` scope. Omitting those tools from a profile removes that scope
+unless another selected tool requires it. Profiles restrict exposed tools, but
+Google scopes can still cover more than one document type or operation.
+
+After upgrading from shared scopes, reconnect each specialized connector to
+start a new Google authorization. A client caching the old scope list may need
+its local OAuth registration reset so it discovers the new list. Existing access
+and refresh tokens are not revoked or retroactively narrowed by this change.
+
+Profile authorization sends `include_granted_scopes=false` to avoid requesting
+Google's incremental merging of previous grants. Google still tracks consent
+for the shared OAuth application: its account permissions page or consent UI
+may show access granted previously. Removing an old broad grant at Google
+affects other profiles and the full connector using that application; they may
+also need to reconnect. Profile hostnames do not create separate Google
+application consent/revocation boundaries.
 
 With profiles enabled, the full endpoint is routed on the configured public and
 internal base hostnames; unknown hosts return 404. `/health` remains available

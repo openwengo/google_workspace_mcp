@@ -185,7 +185,7 @@ async def create_form(
     ),
 )
 @handle_http_errors("get_form", is_read_only=True, service_type="forms")
-@require_google_service("forms", "forms")
+@require_google_service("forms", "forms_read")
 async def get_form(service, user_google_email: str, form_id: str) -> str:
     """
     Get a form.
@@ -312,7 +312,7 @@ async def set_publish_settings(
     ),
 )
 @handle_http_errors("get_form_response", is_read_only=True, service_type="forms")
-@require_google_service("forms", "forms")
+@require_google_service("forms", "forms_responses_read")
 async def get_form_response(
     service, user_google_email: str, form_id: str, response_id: str
 ) -> str:
@@ -375,7 +375,7 @@ async def get_form_response(
     ),
 )
 @handle_http_errors("list_form_responses", is_read_only=True, service_type="forms")
-@require_google_service("forms", "forms")
+@require_google_service("forms", "forms_responses_read")
 async def list_form_responses(
     service,
     user_google_email: str,
