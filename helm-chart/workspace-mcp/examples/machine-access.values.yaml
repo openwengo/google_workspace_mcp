@@ -1,0 +1,39 @@
+# Replace illustrative project/subject/folder IDs with Terraform outputs and
+# verified client SA unique IDs before enabling. Google Drive sharing is separate.
+serviceAccount:
+  create: true
+  name: google-workspace-mcp-sa
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::086948822099:role/eks/exploit/eksMcp-google-workspace-eks-paris-prod
+machineAccess:
+  enabled: false
+  wif:
+    audience: //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/workspace-mcp/providers/aws-mcp
+    aws_region: eu-west-3
+  policy:
+    schema_version: 1
+    issuer: https://accounts.google.com
+    api_consumer_project: wengo-workspace-mcp
+    endpoints:
+      full:
+        audience: https://workspace-mcp.example.com/mcp
+    workspace_accounts:
+      editorial:
+        email: workspace-editorial@wengo-workspace-mcp.iam.gserviceaccount.com
+        unique_id: "223456789012345678901"
+        creation_folder_id: SHARED_DRIVE_FOLDER_ID
+    clients:
+      wengoagent-prod:
+        subject: "123456789012345678901"
+        email: wengoagent-eks-paris-prod@mybestprouploads.iam.gserviceaccount.com
+        workspace_account: editorial
+        endpoints: [full]
+        services: [drive, docs, sheets]
+        permissions: read-write
+        scope_ceiling:
+          - https://www.googleapis.com/auth/drive
+          - https://www.googleapis.com/auth/drive.readonly
+          - https://www.googleapis.com/auth/documents
+          - https://www.googleapis.com/auth/documents.readonly
+          - https://www.googleapis.com/auth/spreadsheets
+          - https://www.googleapis.com/auth/spreadsheets.readonly

@@ -601,3 +601,163 @@ def test_profile_scopes_follow_filtered_tools_and_cross_service_dependencies(
     assert set(provider.client_registration_options.valid_scopes) == set(
         BASE_SCOPES
     ) | {DOCS_READONLY_SCOPE, DRIVE_READONLY_SCOPE}
+
+
+@pytest.mark.asyncio
+async def test_machine_mapping_and_human_refresh_coexist_on_profile_hosts(
+    configured_server, monkeypatch
+):
+    """Real HTTP auth/middleware must preserve profile-bound human token recovery."""
+    import jwt
+    import yaml
+    from pathlib import Path
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from auth.machine_auth import (
+        WorkspaceMultiAuth,
+        get_machine_token,
+        human_auth_provider,
+    )
+    from auth.machine_audit import MachineAccessMiddleware
+    from auth.machine_credentials import MachineRuntime
+    from auth.machine_policy import MachinePolicy, WifConfig, TOOL_RULES, ToolRule
+
+    source, config = configured_server
+    values = yaml.safe_load(
+        Path("helm-chart/workspace-mcp/examples/machine-access.values.yaml").read_text()
+    )["machineAccess"]
+    policy = values["policy"]
+    policy["endpoints"] = {
+        name: {"audience": f"https://{name}.example.test/mcp"}
+        for name in ("full", "docs", "sheets")
+    }
+    writer = policy["clients"]["wengoagent-prod"]
+    writer["endpoints"] = ["full", "docs", "sheets"]
+    policy["clients"]["reader"] = {
+        **writer,
+        "subject": "123456789012345678902",
+        "email": "reader-agent@client-project.iam.gserviceaccount.com",
+        "permissions": "read-only",
+        "scope_ceiling": [DRIVE_READONLY_SCOPE],
+    }
+    runtime = MachineRuntime(
+        MachinePolicy.model_validate(policy), WifConfig.model_validate(values["wif"])
+    )
+    source.auth = WorkspaceMultiAuth(source.auth, runtime, "full")
+    source.add_middleware(MachineAccessMiddleware())
+    original = get_tool_components(source)["get_doc_content"].fn
+    source.local_provider.remove_tool("get_doc_content")
+
+    @source.tool
+    async def get_doc_content():
+        token = get_machine_token()
+        if token is None:
+            return await original()
+        await asyncio.sleep(0)
+        return f"{token.client_key}:{token.target.email}"
+
+    get_tool_components(source)["get_doc_content"].fn._required_google_scopes = [
+        DOCS_READONLY_SCOPE
+    ]
+    for name, rule in {
+        "get_doc_content": ToolRule(frozenset({"docs", "drive"}), frozenset()),
+        "create_doc": ToolRule(
+            frozenset({"docs", "drive"}), frozenset({"docs", "drive"})
+        ),
+        "read_sheet_values": ToolRule(frozenset({"sheets"}), frozenset()),
+    }.items():
+        monkeypatch.setitem(TOOL_RULES, name, rule)
+
+    app = source.http_app(stateless_http=True, json_response=True)
+    servers = {"full": source, **app.state.profile_servers}
+    humans = {
+        name: await seed_token(human_auth_provider(view.auth), name)
+        for name, view in servers.items()
+    }
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    for view in servers.values():
+        monkeypatch.setattr(
+            view.auth.machine_verifier.jwks,
+            "get_signing_key_from_jwt",
+            lambda raw: SimpleNamespace(key=key.public_key()),
+        )
+
+    def machine(client, endpoint):
+        identity = runtime.policy.clients[client]
+        return jwt.encode(
+            {
+                "iss": policy["issuer"],
+                "sub": identity.subject,
+                "email": identity.email,
+                "email_verified": True,
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 3600,
+                "aud": policy["endpoints"][endpoint]["audience"],
+            },
+            key,
+            algorithm="RS256",
+        )
+
+    audit = []
+    monkeypatch.setattr(
+        "auth.machine_audit.emit_audit",
+        lambda event, **fields: audit.append((event, fields)),
+    )
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app)) as client:
+            reader = machine("reader", "docs")
+            listed = await rpc(client, "docs.example.test", reader, "tools/list")
+            assert listed.status_code == 200, listed.text
+            assert {tool["name"] for tool in listed.json()["result"]["tools"]} == {
+                "get_doc_content"
+            }
+            assert (
+                await rpc(client, "full.example.test", reader, "tools/list")
+            ).status_code == 401
+            denied = await rpc(
+                client,
+                "docs.example.test",
+                reader,
+                "tools/call",
+                {"name": "create_doc"},
+            )
+            assert "error" in denied.json() or denied.json()["result"]["isError"]
+            calls = [
+                (name, human, "get_doc_content")
+                for name, human in humans.items()
+                if name != "sheets"
+            ]
+            calls += [
+                ("docs", reader, "get_doc_content"),
+                ("docs", machine("wengoagent-prod", "docs"), "get_doc_content"),
+            ]
+            responses = await asyncio.gather(
+                *(
+                    rpc(
+                        client,
+                        f"{name}.example.test",
+                        bearer,
+                        "tools/call",
+                        {"name": tool},
+                    )
+                    for name, bearer, tool in calls
+                )
+            )
+            texts = [
+                response.json()["result"]["content"][0]["text"]
+                for response in responses
+            ]
+            assert texts == [
+                "refresh-full",
+                "refresh-docs",
+                "reader:workspace-editorial@wengo-workspace-mcp.iam.gserviceaccount.com",
+                "wengoagent-prod:workspace-editorial@wengo-workspace-mcp.iam.gserviceaccount.com",
+            ]
+    events = [
+        fields for event, fields in audit if event == "workspace.machine.tool_call"
+    ]
+    assert {e["authorization"]["client_policy"] for e in events} == {
+        "reader",
+        "wengoagent-prod",
+    }
+    assert all(e["airunner"]["identity"] is None for e in events)
+    assert get_request_auth_provider() is None

@@ -22,6 +22,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from mcp.types import ToolAnnotations
 
 from auth.service_decorator import require_google_service
+from auth.machine_auth import get_machine_token
 from auth.oauth_config import is_stateless_mode
 from core.attachment_storage import get_attachment_storage, get_attachment_url
 from core.file_limits import (
@@ -927,6 +928,14 @@ async def _list_shared_drives_impl(
     return "\n".join(parts)
 
 
+async def _resolve_creation_folder(service, folder_id):
+    if get_machine_token() is not None:
+        from auth.machine_credentials import resolve_creation_folder
+
+        return await resolve_creation_folder(service, folder_id)
+    return await resolve_folder_id(service, folder_id)
+
+
 async def _create_drive_folder_impl(
     service,
     user_google_email: str,
@@ -934,7 +943,7 @@ async def _create_drive_folder_impl(
     parent_folder_id: str = "root",
 ) -> str:
     """Internal implementation for create_drive_folder. Used by tests."""
-    resolved_folder_id = await resolve_folder_id(service, parent_folder_id)
+    resolved_folder_id = await _resolve_creation_folder(service, parent_folder_id)
     file_metadata = {
         "name": folder_name,
         "parents": [resolved_folder_id],
@@ -1095,7 +1104,7 @@ async def create_drive_file(
             expected_sha256=base64_sha256,
         )
 
-    resolved_folder_id = await resolve_folder_id(service, folder_id)
+    resolved_folder_id = await _resolve_creation_folder(service, folder_id)
 
     file_metadata = {
         "name": file_name,
@@ -1374,7 +1383,7 @@ async def _import_with_conversion(
     doc_name = Path(file_name).stem if Path(file_name).suffix else file_name
 
     # Resolve folder
-    resolved_folder_id = await resolve_folder_id(service, folder_id)
+    resolved_folder_id = await _resolve_creation_folder(service, folder_id)
 
     # File metadata - destination is the Google Apps target format
     file_metadata = {
@@ -2791,7 +2800,7 @@ async def copy_drive_file(
     file_id = resolved_file_id
     original_name = file_metadata.get("name", "Unknown File")
 
-    resolved_folder_id = await resolve_folder_id(service, parent_folder_id)
+    resolved_folder_id = await _resolve_creation_folder(service, parent_folder_id)
 
     copy_body = {}
     if new_name:

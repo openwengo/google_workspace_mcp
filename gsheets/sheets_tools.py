@@ -13,6 +13,7 @@ from typing import List, Optional, Union
 from mcp.types import ToolAnnotations
 
 from auth.service_decorator import require_google_service
+from auth.machine_auth import get_machine_token
 from core.server import server
 from core.utils import handle_http_errors, UserInputError, StringList
 from core.comments import create_comment_tools
@@ -1236,14 +1237,60 @@ async def create_spreadsheet(
             {"properties": {"title": sheet_name}} for sheet_name in sheet_names
         ]
 
-    spreadsheet = await asyncio.to_thread(
-        service.spreadsheets()
-        .create(
-            body=spreadsheet_body,
-            fields="spreadsheetId,spreadsheetUrl,properties(title,locale)",
+    if get_machine_token() is not None:
+        from auth.machine_credentials import create_machine_file
+
+        created_id = await create_machine_file(
+            "create_spreadsheet", title, "application/vnd.google-apps.spreadsheet"
         )
-        .execute
-    )
+        try:
+            spreadsheet = await asyncio.to_thread(
+                service.spreadsheets()
+                .get(
+                    spreadsheetId=created_id,
+                    fields="spreadsheetId,spreadsheetUrl,properties(title,locale),sheets(properties)",
+                )
+                .execute
+            )
+            if sheet_names:
+                existing = spreadsheet.get("sheets", [])
+                requests = []
+                remaining = sheet_names
+                if existing:
+                    requests.append(
+                        {
+                            "updateSheetProperties": {
+                                "properties": {
+                                    "sheetId": existing[0]["properties"]["sheetId"],
+                                    "title": sheet_names[0],
+                                },
+                                "fields": "title",
+                            }
+                        }
+                    )
+                    remaining = sheet_names[1:]
+                requests.extend(
+                    {"addSheet": {"properties": {"title": name}}} for name in remaining
+                )
+                await asyncio.to_thread(
+                    service.spreadsheets()
+                    .batchUpdate(spreadsheetId=created_id, body={"requests": requests})
+                    .execute
+                )
+        except Exception:
+            raise RuntimeError(
+                f"Spreadsheet {created_id} was created, but initialization could not be confirmed. "
+                "Inspect that spreadsheet before retrying; do not create another copy."
+            ) from None
+    else:
+        spreadsheet = await asyncio.to_thread(
+            service.spreadsheets()
+            .create(
+                body=spreadsheet_body,
+                fields="spreadsheetId,spreadsheetUrl,properties(title,locale)",
+            )
+            .execute
+        )
 
     properties = spreadsheet.get("properties", {})
     spreadsheet_id = spreadsheet.get("spreadsheetId")

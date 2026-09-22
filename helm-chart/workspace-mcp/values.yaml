@@ -138,6 +138,13 @@ tools:
 # Leave empty to use default or tools.enabled configuration
 toolTier: ""
 
+machineAccess:
+  # Requires built-in OAuth 2.1 and an IRSA annotation on serviceAccount.
+  # See MACHINE_ACCESS.md and examples/machine-access.values.yaml.
+  enabled: false
+  policy: {}
+  wif: {}
+
 # Specialized MCP hostnames served by this same deployment. Each profile selects
 # services up to its tier (default complete), plus optional explicit tool names.
 # Requires built-in OAuth 2.1; add each hostname to ingress.hosts and its callback

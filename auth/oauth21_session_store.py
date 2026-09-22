@@ -1149,6 +1149,10 @@ async def ensure_session_from_access_token(
 ) -> Optional[Credentials]:
     """Ensure credentials derived from an access token are cached and returned."""
 
+    from auth.machine_auth import MachineAccessToken
+
+    if isinstance(access_token, MachineAccessToken):
+        raise ValueError("Machine ID tokens cannot become human OAuth credentials")
     if not access_token:
         return None
 

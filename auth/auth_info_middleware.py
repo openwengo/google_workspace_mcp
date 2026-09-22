@@ -14,6 +14,7 @@ from auth.gateway_identity import GatewayIdentityError, extract_email_from_asser
 from auth.oauth21_session_store import ensure_session_from_access_token
 from auth.oauth_config import get_oauth_config, is_trust_gateway_identity
 from auth.oauth_types import WorkspaceAccessToken
+from auth.machine_auth import MachineAccessToken, require_live_machine
 from auth.request_identity import (
     get_request_identity,
     reset_request_identity,
@@ -94,6 +95,20 @@ class AuthInfoMiddleware(Middleware):
                 raise GatewayIdentityError(
                     "Trusted-gateway identity verification failed"
                 ) from e
+
+        # A typed token is established only by our verifier. Never infer machine
+        # auth from an email, a JWT claim, or airunner headers. Keep it out of all
+        # human OAuth/session recovery paths below.
+        try:
+            machine = get_access_token()
+        except RuntimeError:
+            machine = None
+        if isinstance(machine, MachineAccessToken):
+            require_live_machine(machine)
+            await set_request_identity(
+                context.fastmcp_context, email=machine.target.email, via="machine_sa"
+            )
+            return
 
         # First check if FastMCP has already validated an access token
         try:

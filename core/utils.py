@@ -879,7 +879,14 @@ def handle_http_errors(
                             )
                     elif error.resp.status in [401, 403]:
                         # Authentication/authorization errors
-                        if is_oauth21_enabled():
+                        from auth.machine_auth import get_machine_token
+
+                        if get_machine_token() is not None:
+                            auth_hint = (
+                                "Check the mapped Workspace service account's file access "
+                                "and configured API scopes."
+                            )
+                        elif is_oauth21_enabled():
                             if is_external_oauth21_provider():
                                 auth_hint = (
                                     "LLM: Ask the user to provide a valid OAuth 2.1 "

@@ -13,6 +13,7 @@ from fastmcp.server.http import StarletteWithLifespan
 from starlette.routing import Host, Route
 
 from auth.oauth_config import get_oauth_config
+from auth.machine_auth import compose_machine_auth, human_auth_provider
 from auth.scopes import BASE_SCOPES
 from core.tool_registry import get_tool_components
 from core.tool_tier_loader import ToolTierLoader
@@ -173,6 +174,16 @@ def get_profile_scopes(tools: list) -> list[str]:
 def build_profile_http_app(source, default_app, **http_kwargs):
     """Compose independently authenticated MCP applications behind Host routes."""
     profiles = load_tool_profiles()
+    machine_runtime = getattr(source.auth, "machine_runtime", None)
+    if machine_runtime is not None:
+        unknown = set(machine_runtime.policy.endpoints) - {
+            "full",
+            *(p.key for p in profiles),
+        }
+        if unknown:
+            raise ValueError(
+                f"Machine policy references unconfigured profiles: {sorted(unknown)}"
+            )
     if not profiles:
         return default_app
 
@@ -184,10 +195,11 @@ def build_profile_http_app(source, default_app, **http_kwargs):
     )
 
     config = get_oauth_config()
+    source_provider = human_auth_provider(source.auth)
     if (
         not config.is_oauth21_enabled()
         or config.is_external_oauth21_provider()
-        or not isinstance(source.auth, GoogleProvider)
+        or not isinstance(source_provider, GoogleProvider)
     ):
         raise ValueError(
             f"{PROFILES_ENV} requires the built-in Google OAuth 2.1 provider"
@@ -223,14 +235,16 @@ def build_profile_http_app(source, default_app, **http_kwargs):
             config=config,
             base_url=profile.origin,
             client_storage=_maybe_apply_storage_prefix(
-                source.auth._client_storage, f"profile_{profile.key}"
+                source_provider._client_storage, f"profile_{profile.key}"
             ),
-            jwt_signing_key=source.auth._jwt_signing_key,
+            jwt_signing_key=source_provider._jwt_signing_key,
             scopes=get_profile_scopes(tools),
         )
         view = SecureFastMCP(
             name=profile.name,
-            auth=provider,
+            auth=compose_machine_auth(
+                provider, endpoint=profile.key, runtime=machine_runtime
+            ),
             tools=[tool.model_copy() for tool in tools],
             middleware=list(source.middleware),
             dereference_schemas=False,  # Already included in the copied middleware.

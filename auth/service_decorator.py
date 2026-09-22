@@ -19,6 +19,8 @@ from auth.gateway_identity import (
     get_verified_gateway_principal,
 )
 from auth.request_identity import get_request_identity
+from auth.machine_auth import get_machine_token, validate_machine_arguments
+from auth.machine_policy import register_machine_tool
 from core.config import USER_GOOGLE_EMAIL as _ENV_USER_EMAIL
 from auth.oauth21_session_store import (
     get_auth_provider,
@@ -327,6 +329,14 @@ async def _authenticate_service(
     Returns:
         Tuple of (service, actual_user_email)
     """
+    machine = get_machine_token()
+    if machine is not None:
+        from auth.machine_credentials import get_machine_service
+
+        return await get_machine_service(
+            machine, service_name, service_version, tool_name
+        )
+
     if is_service_account_enabled():
         canonical_email = _get_configured_user_google_email()
         if not canonical_email:
@@ -796,6 +806,11 @@ def require_google_service(
             # Note: `args` and `kwargs` are now the arguments for the *wrapper*,
             # which does not include 'service'.
 
+            if get_machine_token() is not None:
+                validate_machine_arguments(
+                    wrapper_sig.bind_partial(*args, **kwargs).arguments
+                )
+
             # Get authentication context early to determine OAuth mode
             authenticated_user, auth_method, mcp_session_id = await _get_auth_context(
                 func.__name__
@@ -902,6 +917,7 @@ def require_google_service(
 
         # Attach required scopes to the wrapper for tool filtering
         wrapper._required_google_scopes = _resolve_scopes(scopes)
+        register_machine_tool(func, {service_type: wrapper._required_google_scopes})
 
         return wrapper
 
@@ -947,6 +963,10 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # Get authentication context early
+            if get_machine_token() is not None:
+                validate_machine_arguments(
+                    wrapper_sig.bind_partial(*args, **kwargs).arguments
+                )
             tool_name = func.__name__
             authenticated_user, auth_method, mcp_session_id = await _get_auth_context(
                 tool_name
@@ -1064,6 +1084,13 @@ def require_multiple_services(service_configs: List[Dict[str, Any]]):
         for config in service_configs:
             all_scopes.extend(_resolve_scopes(config["scopes"]))
         wrapper._required_google_scopes = all_scopes
+        register_machine_tool(
+            func,
+            {
+                config["service_type"]: _resolve_scopes(config["scopes"])
+                for config in service_configs
+            },
+        )
 
         return wrapper
 

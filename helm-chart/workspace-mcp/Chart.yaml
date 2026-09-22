@@ -2,7 +2,7 @@ apiVersion: v2
 name: workspace-mcp
 description: A Helm chart for Google Workspace MCP Server - Comprehensive Google Workspace integration for AI assistants
 type: application
-version: 0.3.1-wengo.2
+version: 0.3.1-wengo.3
 appVersion: "1.27.0"
 kubeVersion: ">=1.25.0-0"
 keywords:

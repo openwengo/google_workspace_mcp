@@ -20,6 +20,7 @@ from mcp.types import ToolAnnotations
 
 # Auth & server utilities
 from auth.service_decorator import require_google_service, require_multiple_services
+from auth.machine_auth import get_machine_token
 from core.file_limits import (
     FileTooLargeError,
     download_media_bytes,
@@ -474,17 +475,33 @@ async def create_doc(
         f"[create_doc] Invoked. Email: '{user_google_email}', title_len={len(title)}"
     )
 
-    doc = await asyncio.to_thread(
-        service.documents().create(body={"title": title}).execute
-    )
-    doc_id = doc.get("documentId")
+    machine = get_machine_token() is not None
+    if machine:
+        from auth.machine_credentials import create_machine_file
+
+        doc_id = await create_machine_file(
+            "create_doc", title, "application/vnd.google-apps.document"
+        )
+    else:
+        doc = await asyncio.to_thread(
+            service.documents().create(body={"title": title}).execute
+        )
+        doc_id = doc.get("documentId")
     if content:
         requests = [{"insertText": {"location": {"index": 1}, "text": content}}]
-        await asyncio.to_thread(
-            service.documents()
-            .batchUpdate(documentId=doc_id, body={"requests": requests})
-            .execute
-        )
+        try:
+            await asyncio.to_thread(
+                service.documents()
+                .batchUpdate(documentId=doc_id, body={"requests": requests})
+                .execute
+            )
+        except Exception:
+            if machine:
+                raise RuntimeError(
+                    f"Document {doc_id} was created, but initial content could not be confirmed. "
+                    "Inspect that document before retrying; do not create another copy."
+                ) from None
+            raise
     link = f"https://docs.google.com/document/d/{doc_id}/edit"
     if content:
         content_note = f"Initial content: {len(content)} characters inserted."
@@ -2180,6 +2197,11 @@ async def export_doc_to_pdf(
 
         # Prepare file metadata for upload
         file_metadata = {"name": pdf_filename, "mimeType": "application/pdf"}
+
+        if get_machine_token() is not None:
+            from auth.machine_credentials import resolve_creation_folder
+
+            folder_id = await resolve_creation_folder(service, folder_id)
 
         # Add parent folder if specified
         if folder_id:

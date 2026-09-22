@@ -4,6 +4,13 @@
 {{- if and .Values.mcpProfiles (hasKey .Values.env "WORKSPACE_MCP_TOOL_PROFILES") }}
 {{- fail "Set mcpProfiles or env.WORKSPACE_MCP_TOOL_PROFILES, not both." }}
 {{- end }}
+{{- if .Values.machineAccess.enabled }}
+{{- range $key := list "MCP_MACHINE_ACCESS_ENABLED" "MCP_MACHINE_POLICY_FILE" "MCP_MACHINE_WIF_FILE" }}
+{{- if hasKey $.Values.env $key }}
+{{- fail (printf "Configure machineAccess instead of env.%s" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- $oauthSecretName := include "workspace-mcp.oauthSecretName" . }}
 {{- $healthCheck := .Values.healthCheck | default (dict) }}
 {{- $startupProbe := .Values.startupProbe | default (dict) }}
@@ -28,9 +35,14 @@ spec:
       {{- include "workspace-mcp.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- if or .Values.podAnnotations .Values.machineAccess.enabled }}
       annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.machineAccess.enabled }}
+        checksum/machine-access: {{ include (print $.Template.BasePath "/machine-access-configmap.yaml") . | sha256sum }}
+        {{- end }}
       {{- end }}
       labels:
         {{- include "workspace-mcp.selectorLabels" . | nindent 8 }}
@@ -86,6 +98,16 @@ spec:
             failureThreshold: {{ $readinessProbe.failureThreshold }}
           {{- end }}
           env:
+            {{- if .Values.machineAccess.enabled }}
+            - name: MCP_MACHINE_ACCESS_ENABLED
+              value: "true"
+            - name: MCP_MACHINE_POLICY_FILE
+              value: /etc/workspace-mcp/machine-access/policy.json
+            - name: MCP_MACHINE_WIF_FILE
+              value: /etc/workspace-mcp/machine-access/wif.json
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            {{- end }}
             # Google OAuth credentials from secret
             - name: GOOGLE_OAUTH_CLIENT_ID
               valueFrom:
@@ -142,6 +164,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.machineAccess.enabled }}
+            - name: machine-access
+              mountPath: /etc/workspace-mcp/machine-access
+              readOnly: true
+            {{- end }}
             - name: credentials
               mountPath: /app/.credentials
               readOnly: false
@@ -156,6 +183,11 @@ spec:
               {{- end }}
             {{- end }}
       volumes:
+        {{- if .Values.machineAccess.enabled }}
+        - name: machine-access
+          configMap:
+            name: {{ include "workspace-mcp.fullname" . }}-machine-access
+        {{- end }}
         - name: credentials
           emptyDir:
             sizeLimit: 100Mi

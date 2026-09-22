@@ -13,6 +13,13 @@ from core.warning_filters import install_startup_warning_filters
 install_startup_warning_filters()
 
 from auth.auth_info_middleware import AuthInfoMiddleware
+from auth.machine_auth import (
+    compose_machine_auth,
+    human_auth_provider,
+    machine_access_enabled,
+    validate_machine_endpoint,
+)
+from auth.machine_audit import MachineAccessMiddleware
 from core.camel_case_middleware import CamelCaseArgumentsMiddleware
 from auth.google_auth import handle_auth_callback, start_auth_flow, check_client_secrets
 from auth.gateway_identity import get_verified_gateway_principal
@@ -248,10 +255,17 @@ def _compute_scope_fingerprint(scopes=None) -> str:
 class SecureFastMCP(FastMCP):
     def http_app(self, **kwargs) -> "Starlette":
         """Override to add secure middleware stack for OAuth 2.1."""
+        human_provider = human_auth_provider(self.auth)
+        if self.auth is not human_provider:
+            validate_machine_endpoint(
+                self.auth,
+                str(human_provider.base_url).rstrip("/")
+                + (kwargs.get("path") or "/mcp"),
+            )
         app = super().http_app(**kwargs)
 
         # Add middleware in order (first added = outermost layer)
-        registration = getattr(self.auth, "client_registration_options", None)
+        registration = getattr(human_provider, "client_registration_options", None)
         app.user_middleware.insert(
             0,
             Middleware(
@@ -267,7 +281,7 @@ class SecureFastMCP(FastMCP):
             Middleware(MCPSessionMiddleware, mcp_path=kwargs.get("path") or "/mcp"),
         )
         app.user_middleware.insert(
-            3, Middleware(AuthProviderContextMiddleware, provider=self.auth)
+            3, Middleware(AuthProviderContextMiddleware, provider=human_provider)
         )
 
         # Rebuild middleware stack
@@ -381,6 +395,7 @@ server = SecureFastMCP(
 
 # Add the AuthInfo middleware to inject authentication into FastMCP context
 auth_info_middleware = AuthInfoMiddleware()
+server.add_middleware(MachineAccessMiddleware())
 server.add_middleware(auth_info_middleware)
 
 # Accept camelCase argument names (calendarId, timeMin, ...) from callers that
@@ -501,6 +516,16 @@ def configure_server_for_http():
 
     # Check if OAuth 2.1 is enabled via centralized config
     oauth21_enabled = config.is_oauth21_enabled()
+
+    if machine_access_enabled() and (
+        not oauth21_enabled
+        or config.is_external_oauth21_provider()
+        or config.is_service_account_enabled()
+        or is_trust_gateway_identity()
+    ):
+        raise ValueError(
+            "Machine access requires built-in human OAuth 2.1; DWD/gateway modes are incompatible"
+        )
 
     if oauth21_enabled:
         if not config.is_configured():
@@ -818,6 +843,7 @@ def configure_server_for_http():
                 )
 
             # Always set auth provider for token validation in middleware
+            server.auth = compose_machine_auth(provider)
             set_auth_provider(provider)
             _auth_provider = provider
         except Exception as exc:
@@ -849,7 +875,7 @@ def close_auth_provider() -> None:
     provider = _auth_provider
     _auth_provider = None
     set_auth_provider(None)
-    if server.auth is provider:
+    if human_auth_provider(server.auth) is provider:
         server.auth = None
 
     close = getattr(provider, "close", None)
