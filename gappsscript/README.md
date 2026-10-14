@@ -177,6 +177,14 @@ uv run main.py --tools appscript drive sheets
 
 On first use, you will be prompted to authorize the application. Complete the OAuth flow in your browser.
 
+## Scripts bound to a spreadsheet
+
+- Create a new bound project with `create_script_project(title="Sheet automation", parent_id="SPREADSHEET_ID")`. The parent is a container file, not a Drive folder. This calls Google's [`projects.create`](https://developers.google.com/apps-script/api/reference/rest/v1/projects/create) with `parentId`.
+- Given a script ID, `get_script_project` displays its `parentId` when returned by [`projects.get`](https://developers.google.com/apps-script/api/reference/rest/v1/projects). For a Sheets-bound script, this is the spreadsheet ID.
+- There is no documented API endpoint to look up an existing bound script ID from a spreadsheet ID. `list_script_projects` searches Drive and cannot discover container-bound scripts, which [are not accessible through the Drive API](https://developers.google.com/apps-script/guides/import-export).
+- For an existing Sheet, open **Extensions > Apps Script > Project Settings > Script ID** once and retain the spreadsheet/script ID mapping for future API calls.
+- The API does not provide an operation to bind or rebind an existing script. Create a bound project and copy the source if needed. A standalone script can also access a spreadsheet with `SpreadsheetApp.openById("SPREADSHEET_ID")` without being bound to it.
+
 ## Tool Tiers
 
 ### Core Tier
