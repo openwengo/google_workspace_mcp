@@ -41,9 +41,45 @@ from gappsscript.apps_script_tools import (
     _get_version_impl,
     _get_script_metrics_impl,
     _generate_trigger_code_impl,
+    create_script_project,
+    get_script_metrics,
+    list_script_processes,
     manage_deployment,
     run_script_function,
 )
+
+
+@pytest.mark.parametrize(
+    "function, expected_scope",
+    [
+        (list_script_processes, "https://www.googleapis.com/auth/script.processes"),
+        (get_script_metrics, "https://www.googleapis.com/auth/script.metrics"),
+    ],
+)
+def test_monitoring_profile_requests_api_scope_in_readonly_mode(
+    monkeypatch, function, expected_scope
+):
+    """Profile consent must include the monitoring API's scope after filtering."""
+    from fastmcp import FastMCP
+
+    from auth.scopes import BASE_SCOPES
+    from core.tool_profiles import get_profile_scopes
+    from core.tool_registry import filter_server_tools, get_tool_components
+
+    source = FastMCP("Apps Script monitoring")
+    source.tool()(function)
+    source.tool()(create_script_project)
+    monkeypatch.setattr("core.tool_registry.is_read_only_mode", lambda: True)
+    monkeypatch.setattr("core.tool_registry.is_permissions_mode", lambda: False)
+    monkeypatch.setattr("core.tool_registry.get_enabled_tools", lambda: None)
+    monkeypatch.setattr("core.tool_registry.get_disabled_tools", lambda: set())
+    filter_server_tools(source)
+    tools = get_tool_components(source)
+
+    assert set(tools) == {function.__name__}
+    assert set(get_profile_scopes(list(tools.values()))) == set(BASE_SCOPES) | {
+        expected_scope
+    }
 
 
 def _parameters_adapter():

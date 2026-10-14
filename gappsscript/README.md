@@ -424,6 +424,17 @@ Common errors and solutions:
 - Check OAuth scopes are authorized
 - Verify you own or have access to the project
 
+For `ACCESS_TOKEN_SCOPE_INSUFFICIENT`, `list_script_processes` needs
+`https://www.googleapis.com/auth/script.processes`, and `get_script_metrics`
+needs `https://www.googleapis.com/auth/script.metrics`. Project read access
+(`script.projects.readonly`) does not cover either monitoring API. Tool profiles
+derive their OAuth scopes from the selected tools' declarations.
+
+After deploying a fix to those declarations, reconnect the Apps Script MCP
+connector and complete its Google OAuth consent flow. Existing tokens do not
+gain new permissions automatically. If the client still requests its old scopes,
+reset that connector's cached OAuth registration and reconnect.
+
 ### Execution timeout
 - Script exceeded 6-minute limit
 - Optimize code or split into smaller functions

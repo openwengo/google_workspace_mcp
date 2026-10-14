@@ -964,7 +964,7 @@ async def _list_script_processes_impl(
     ),
 )
 @handle_http_errors("list_script_processes", is_read_only=True, service_type="script")
-@require_google_service("script", "script_readonly")
+@require_google_service("script", "script_processes")
 async def list_script_processes(
     service: Any,
     user_google_email: str,
@@ -1330,7 +1330,7 @@ async def _get_script_metrics_impl(
     ),
 )
 @handle_http_errors("get_script_metrics", is_read_only=True, service_type="script")
-@require_google_service("script", "script_readonly")
+@require_google_service("script", "script_metrics")
 async def get_script_metrics(
     service: Any,
     user_google_email: str,
