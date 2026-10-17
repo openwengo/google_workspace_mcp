@@ -16,7 +16,8 @@ MCP tools for Google Apps Script via the Google Workspace MCP server. All tools 
 ## Projects
 
 ### list_script_projects
-Lists Apps Script projects accessible to the user (via Drive API).
+Lists standalone Apps Script projects accessible to the user (via Drive API).
+Container-bound scripts are not returned; use their script IDs directly.
 
 | Parameter | Type | Required | Default | Notes |
 |-----------|------|----------|---------|-------|
@@ -25,7 +26,10 @@ Lists Apps Script projects accessible to the user (via Drive API).
 | page_token | any | no | | Pagination token |
 
 ### get_script_project
-Retrieves complete project details including all source files.
+Retrieves project details, source previews, and `parentId` for bound projects.
+For a Sheets-bound project, `parentId` is the spreadsheet ID. Google provides no
+documented reverse lookup from spreadsheet ID to script ID; obtain an existing
+script ID from **Extensions > Apps Script > Project Settings > Script ID**.
 
 | Parameter | Type | Required | Default | Notes |
 |-----------|------|----------|---------|-------|
@@ -33,13 +37,15 @@ Retrieves complete project details including all source files.
 | script_id | string | yes | | |
 
 ### create_script_project
-Creates a new Apps Script project.
+Creates a new standalone or container-bound Apps Script project. Set `parent_id`
+to the spreadsheet ID to create a script bound to that Sheet. This does not find
+an existing bound script or bind an existing standalone script.
 
 | Parameter | Type | Required | Default | Notes |
 |-----------|------|----------|---------|-------|
 | user_google_email | string | yes | | |
 | title | string | yes | | Project title |
-| parent_id | any | no | | Drive folder ID or bound container ID |
+| parent_id | string | no | | Container file ID (Sheet, Doc, Form, or Slides); not a Drive folder ID |
 
 ### delete_script_project
 Permanently deletes an Apps Script project. Cannot be undone.

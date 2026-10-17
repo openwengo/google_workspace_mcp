@@ -41,9 +41,45 @@ from gappsscript.apps_script_tools import (
     _get_version_impl,
     _get_script_metrics_impl,
     _generate_trigger_code_impl,
+    create_script_project,
+    get_script_metrics,
+    list_script_processes,
     manage_deployment,
     run_script_function,
 )
+
+
+@pytest.mark.parametrize(
+    "function, expected_scope",
+    [
+        (list_script_processes, "https://www.googleapis.com/auth/script.processes"),
+        (get_script_metrics, "https://www.googleapis.com/auth/script.metrics"),
+    ],
+)
+def test_monitoring_profile_requests_api_scope_in_readonly_mode(
+    monkeypatch, function, expected_scope
+):
+    """Profile consent must include the monitoring API's scope after filtering."""
+    from fastmcp import FastMCP
+
+    from auth.scopes import BASE_SCOPES
+    from core.tool_profiles import get_profile_scopes
+    from core.tool_registry import filter_server_tools, get_tool_components
+
+    source = FastMCP("Apps Script monitoring")
+    source.tool()(function)
+    source.tool()(create_script_project)
+    monkeypatch.setattr("core.tool_registry.is_read_only_mode", lambda: True)
+    monkeypatch.setattr("core.tool_registry.is_permissions_mode", lambda: False)
+    monkeypatch.setattr("core.tool_registry.get_enabled_tools", lambda: None)
+    monkeypatch.setattr("core.tool_registry.get_disabled_tools", lambda: set())
+    filter_server_tools(source)
+    tools = get_tool_components(source)
+
+    assert set(tools) == {function.__name__}
+    assert set(get_profile_scopes(list(tools.values()))) == set(BASE_SCOPES) | {
+        expected_scope
+    }
 
 
 def _parameters_adapter():
@@ -94,7 +130,8 @@ async def test_list_script_projects():
 
 
 @pytest.mark.asyncio
-async def test_get_script_project():
+@pytest.mark.parametrize("parent_id", [None, "spreadsheet123"])
+async def test_get_script_project(parent_id):
     """Test retrieving complete project details"""
     mock_service = Mock()
 
@@ -106,6 +143,8 @@ async def test_get_script_project():
         "createTime": "2025-01-10T10:00:00Z",
         "updateTime": "2026-01-12T15:30:00Z",
     }
+    if parent_id:
+        mock_metadata_response["parentId"] = parent_id
 
     # projects().getContent() returns files with source code
     mock_content_response = {
@@ -129,10 +168,15 @@ async def test_get_script_project():
     assert "Test Project" in result
     assert "creator@example.com" in result
     assert "Code" in result
+    if parent_id:
+        assert f"Bound container ID (parentId): {parent_id}" in result
+    else:
+        assert "Bound container ID" not in result
 
 
 @pytest.mark.asyncio
-async def test_create_script_project():
+@pytest.mark.parametrize("parent_id", [None, "spreadsheet123"])
+async def test_create_script_project(parent_id):
     """Test creating new Apps Script project"""
     mock_service = Mock()
     mock_response = {"scriptId": "new123", "title": "New Project"}
@@ -140,11 +184,18 @@ async def test_create_script_project():
     mock_service.projects().create().execute.return_value = mock_response
 
     result = await _create_script_project_impl(
-        service=mock_service, user_google_email="test@example.com", title="New Project"
+        service=mock_service,
+        user_google_email="test@example.com",
+        title="New Project",
+        parent_id=parent_id,
     )
 
     assert "Script ID: new123" in result
     assert "New Project" in result
+    expected_body = {"title": "New Project"}
+    if parent_id:
+        expected_body["parentId"] = parent_id
+    assert mock_service.projects().create.call_args == call(body=expected_body)
 
 
 @pytest.mark.asyncio

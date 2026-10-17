@@ -170,7 +170,9 @@ async def list_script_projects(
     """
     Lists Google Apps Script projects accessible to the user.
 
-    Uses Drive API to find Apps Script files.
+    Uses Drive API to find standalone Apps Script files. Container-bound
+    scripts do not appear in Drive listings; use a known script_id with
+    get_script_project to inspect one.
 
     Args:
         service: Injected Google API service client
@@ -211,9 +213,10 @@ async def _get_script_project_impl(
         f"Creator: {creator}",
         f"Created: {create_time}",
         f"Modified: {update_time}",
-        "",
-        "Files:",
     ]
+    if project.get("parentId"):
+        output.append(f"Bound container ID (parentId): {project['parentId']}")
+    output.extend(["", "Files:"])
 
     files = content.get("files", [])
     for i, file in enumerate(files, 1):
@@ -247,7 +250,9 @@ async def get_script_project(
     script_id: str,
 ) -> str:
     """
-    Retrieves complete project details including all source files.
+    Retrieves project details, source previews, and the bound container ID
+    (parentId) when present. For a script bound to Google Sheets, parentId is
+    the spreadsheet ID. Requires a script ID, not a spreadsheet ID.
 
     Args:
         service: Injected Google API service client
@@ -381,13 +386,17 @@ async def create_script_project(
     parent_id: Optional[str] = None,
 ) -> str:
     """
-    Creates a new Apps Script project.
+    Creates a new standalone or container-bound Apps Script project.
+    To bind the new project to a spreadsheet, pass its spreadsheet ID as
+    parent_id. This creates a project; it does not find an existing bound script
+    or attach an existing standalone script to a container.
 
     Args:
         service: Injected Google API service client
         user_google_email: User's email address
         title: Project title
-        parent_id: Optional Drive folder ID or bound container ID
+        parent_id: Optional container file ID (Google Sheet, Doc, Form, or Slides
+            file). Omit for a standalone script. This is not a Drive folder ID.
 
     Returns:
         str: Formatted string with new project details
@@ -964,7 +973,7 @@ async def _list_script_processes_impl(
     ),
 )
 @handle_http_errors("list_script_processes", is_read_only=True, service_type="script")
-@require_google_service("script", "script_readonly")
+@require_google_service("script", "script_processes")
 async def list_script_processes(
     service: Any,
     user_google_email: str,
@@ -1330,7 +1339,7 @@ async def _get_script_metrics_impl(
     ),
 )
 @handle_http_errors("get_script_metrics", is_read_only=True, service_type="script")
-@require_google_service("script", "script_readonly")
+@require_google_service("script", "script_metrics")
 async def get_script_metrics(
     service: Any,
     user_google_email: str,
