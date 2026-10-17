@@ -195,6 +195,18 @@ def resolve_bind_host_for_transport(transport: str) -> str:
     return "127.0.0.1"
 
 
+def check_port_bindable(host: str, port: int) -> None:
+    """Raise OSError if a listening socket cannot be bound to host:port.
+
+    SO_REUSEADDR matches uvicorn's own bind: connections left in TIME_WAIT by
+    a killed predecessor must not block startup (a pod's network namespace
+    outlives container restarts), while a live listener still does.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
 def validate_streamable_http_auth(transport: str) -> None:
     """Reject misconfigured OAuth 2.1 HTTP before starting."""
     if transport != "streamable-http":
@@ -956,8 +968,7 @@ def main():
         if args.transport == "streamable-http":
             # Check port availability before starting HTTP server
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind((host, port))
+                check_port_bindable(host, port)
             except OSError as e:
                 fatal(
                     ui,
