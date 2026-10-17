@@ -21,6 +21,7 @@ from auth.machine_auth import (
 )
 from auth.machine_audit import MachineAccessMiddleware
 from core.camel_case_middleware import CamelCaseArgumentsMiddleware
+from core.tool_concurrency import ToolConcurrencyMiddleware
 from auth.google_auth import handle_auth_callback, start_auth_flow, check_client_secrets
 from auth.gateway_identity import get_verified_gateway_principal
 from auth.mcp_session_middleware import MCPSessionMiddleware
@@ -402,6 +403,10 @@ server.add_middleware(auth_info_middleware)
 # mirror the Google API field names, mapping them onto the snake_case tool
 # parameters. See https://github.com/taylorwilsdon/google_workspace_mcp/issues/918
 server.add_middleware(CamelCaseArgumentsMiddleware())
+
+# Bound concurrent tool calls per cost class and log per-call memory metrics.
+# Innermost, so calls rejected by the auth middlewares never take a slot.
+server.add_middleware(ToolConcurrencyMiddleware())
 
 
 def _parse_allowed_redirect_uris(value: Optional[str]) -> Optional[List[str]]:

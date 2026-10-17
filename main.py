@@ -519,9 +519,11 @@ def main():
     # defensively as well, but a deployment typo must not silently disable the
     # configured limit.
     from core.file_limits import get_max_file_bytes
+    from core.tool_concurrency import load_tool_gate_config
 
     try:
         get_max_file_bytes()
+        load_tool_gate_config()
     except ValueError as exc:
         parser.error(str(exc))
 

@@ -92,6 +92,7 @@ class EnhancedLogFormatter(logging.Formatter):
             "gtasks.tasks_tools": "[TASKS]",
             "gsearch.search_tools": "[SEARCH]",
             "auth.service_decorator": "[TOOL]",
+            "core.tool_concurrency": "[METRICS]",
             "gcontacts.contacts_tools": "[CONTACTS]",
             "gappsscript.apps_script_tools": "[APPSCRIPT]",
         }
