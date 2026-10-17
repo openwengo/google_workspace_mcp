@@ -20,6 +20,7 @@ import httplib2
 import google_auth_httplib2
 from auth.scopes import SCOPES, get_current_scopes, has_required_scopes  # noqa
 from auth.client_secrets import get_client_secrets_path, load_client_secrets_file
+from auth.google_api_docstrings import disable_schema_docstrings
 from auth.oauth21_session_store import get_oauth21_session_store
 from auth.credential_store import get_credential_store
 from auth.gateway_identity import normalize_principal_email
@@ -43,6 +44,9 @@ except ImportError:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Services are built per tool call; don't regenerate schema docstrings each time.
+disable_schema_docstrings()
 
 
 def _session_id_log_fingerprint(session_id: Optional[str]) -> str:

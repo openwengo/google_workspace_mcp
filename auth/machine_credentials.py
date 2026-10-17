@@ -9,8 +9,11 @@ import boto3
 from google.auth import aws, credentials, exceptions
 from googleapiclient.discovery import build
 
+from auth.google_api_docstrings import disable_schema_docstrings
 from auth.machine_auth import get_machine_token, require_live_machine
 from auth.machine_policy import authorize_tool, select_scopes
+
+disable_schema_docstrings()
 
 
 class IrsaSupplier(aws.AwsSecurityCredentialsSupplier):
