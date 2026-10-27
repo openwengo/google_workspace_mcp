@@ -224,3 +224,154 @@ async def test_ssrf_safe_fetch_redacts_redirect_source_in_errors(monkeypatch):
     message = str(exc_info.value)
     assert "example.com/start" in message
     assert "token=secret" not in message
+
+
+TRUSTED_PREFIX = "https://wengoagent.wengo.com/v1/links/"
+
+
+def _resolve_to(ip_str):
+    def fake_getaddrinfo(hostname, port):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip_str, 0))]
+
+    return fake_getaddrinfo
+
+
+@pytest.mark.asyncio
+async def test_trusted_prefix_allows_private_address(monkeypatch):
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", TRUSTED_PREFIX)
+    monkeypatch.setattr(socket, "getaddrinfo", _resolve_to("172.16.48.33"))
+
+    assert await http_utils.validate_url_not_internal(
+        "https://wengoagent.wengo.com/v1/links/abc?format=csv"
+    ) == ["172.16.48.33"]
+
+
+@pytest.mark.asyncio
+async def test_trusted_prefix_does_not_cover_other_paths(monkeypatch):
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", TRUSTED_PREFIX)
+    monkeypatch.setattr(socket, "getaddrinfo", _resolve_to("172.16.48.33"))
+
+    with pytest.raises(ValueError, match="private/internal networks"):
+        await http_utils.validate_url_not_internal(
+            "https://wengoagent.wengo.com/v1/admin"
+        )
+
+
+@pytest.mark.asyncio
+async def test_private_address_rejected_without_trusted_prefixes(monkeypatch):
+    monkeypatch.delenv("URL_FETCH_TRUSTED_PREFIXES", raising=False)
+    monkeypatch.setattr(socket, "getaddrinfo", _resolve_to("172.16.48.33"))
+
+    with pytest.raises(ValueError, match="private/internal networks"):
+        await http_utils.validate_url_not_internal(TRUSTED_PREFIX + "abc")
+
+
+def test_trusted_prefixes_accept_comma_separated_list(monkeypatch):
+    monkeypatch.setenv(
+        "URL_FETCH_TRUSTED_PREFIXES",
+        f" {TRUSTED_PREFIX} , http://files.internal:8080/exports ,",
+    )
+
+    assert http_utils.is_trusted_url(TRUSTED_PREFIX + "abc")
+    assert http_utils.is_trusted_url("http://files.internal:8080/exports")
+    assert http_utils.is_trusted_url("http://files.internal:8080/exports/a.xlsx")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Host confusion: prefix host as userinfo or as a subdomain label.
+        "https://wengoagent.wengo.com@evil.example/v1/links/abc",
+        "https://wengoagent.wengo.com.evil.example/v1/links/abc",
+        # Scheme and port must match exactly.
+        "http://wengoagent.wengo.com/v1/links/abc",
+        "https://wengoagent.wengo.com:8443/v1/links/abc",
+        # Traversal out of the prefix, raw and encoded.
+        "https://wengoagent.wengo.com/v1/links/../admin",
+        "https://wengoagent.wengo.com/v1/links/%2e%2e/admin",
+        "https://wengoagent.wengo.com/v1/links/%252e%252e/admin",
+        "https://wengoagent.wengo.com/v1/links/..%2fadmin",
+        "https://wengoagent.wengo.com/v1/links/..;/admin",
+        "https://wengoagent.wengo.com/v1/links/..\\admin",
+        # The prefix's trailing slash is part of the match.
+        "https://wengoagent.wengo.com/v1/links",
+        "https://wengoagent.wengo.com/v1/linksX/abc",
+    ],
+)
+def test_trusted_prefix_rejects_lookalike_urls(monkeypatch, url):
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", TRUSTED_PREFIX)
+
+    assert not http_utils.is_trusted_url(url)
+
+
+def test_trusted_prefix_without_trailing_slash_matches_on_segment_boundary(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "URL_FETCH_TRUSTED_PREFIXES", "https://wengoagent.wengo.com/v1/links"
+    )
+
+    assert http_utils.is_trusted_url("https://wengoagent.wengo.com/v1/links")
+    assert http_utils.is_trusted_url("https://wengoagent.wengo.com/v1/links/abc")
+    assert not http_utils.is_trusted_url("https://wengoagent.wengo.com/v1/linksX")
+
+
+def test_trusted_prefix_host_and_scheme_are_case_insensitive(monkeypatch):
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", TRUSTED_PREFIX)
+
+    assert http_utils.is_trusted_url("HTTPS://WengoAgent.Wengo.com:443/v1/links/x")
+    assert not http_utils.is_trusted_url("https://wengoagent.wengo.com/V1/links/x")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "ftp://wengoagent.wengo.com/v1/links/",
+        "wengoagent.wengo.com/v1/links/",
+        "https://user:pass@wengoagent.wengo.com/v1/links/",
+        "https://wengoagent.wengo.com/v1/links/?token=x",
+        "https://wengoagent.wengo.com/v1/../links/",
+        "https://wengoagent.wengo.com:notaport/v1/links/",
+    ],
+)
+def test_invalid_trusted_prefix_raises(monkeypatch, raw):
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", raw)
+
+    with pytest.raises(ValueError, match="URL_FETCH_TRUSTED_PREFIXES"):
+        http_utils.get_trusted_url_prefixes()
+
+
+@pytest.mark.asyncio
+async def test_trusted_url_cannot_redirect_to_untrusted_private_url(monkeypatch):
+    """Each redirect hop is re-validated against the trusted prefixes."""
+    monkeypatch.setenv("URL_FETCH_TRUSTED_PREFIXES", TRUSTED_PREFIX)
+    monkeypatch.setattr(socket, "getaddrinfo", _resolve_to("172.16.48.33"))
+    requested = []
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def build_request(self, method, url, headers=None, extensions=None):
+            return {"url": url, "host": headers["Host"]}
+
+        async def send(self, request):
+            requested.append(request["host"])
+            return httpx.Response(
+                302,
+                headers={"location": "https://wengoagent.wengo.com/v1/admin"},
+                request=httpx.Request("GET", request["url"]),
+            )
+
+    monkeypatch.setattr(http_utils.httpx, "AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(ValueError, match="private/internal networks"):
+        await http_utils.ssrf_safe_fetch(TRUSTED_PREFIX + "abc")
+
+    assert requested == ["wengoagent.wengo.com"]

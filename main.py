@@ -515,14 +515,16 @@ def main():
     )
     args = parser.parse_args()
 
-    # Validate the memory-safety setting once at startup. Tool helpers parse it
-    # defensively as well, but a deployment typo must not silently disable the
-    # configured limit.
+    # Validate the memory-safety and URL-trust settings once at startup. Tool
+    # helpers parse them defensively as well, but a deployment typo must not
+    # silently disable the configured limit or fail every URL fetch at runtime.
     from core.file_limits import get_max_file_bytes
+    from core.http_utils import get_trusted_url_prefixes
     from core.tool_concurrency import load_tool_gate_config
 
     try:
         get_max_file_bytes()
+        get_trusted_url_prefixes()
         load_tool_gate_config()
     except ValueError as exc:
         parser.error(str(exc))

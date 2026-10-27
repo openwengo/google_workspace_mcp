@@ -4,23 +4,125 @@ SSRF-safe HTTP fetching utilities.
 Provides async HTTP fetch functions with protection against SSRF attacks,
 DNS rebinding, and redirect-based bypasses. Extracted from gdrive/drive_tools.py
 for reuse across modules (Drive uploads, Gmail URL attachments, etc.).
+
+``URL_FETCH_TRUSTED_PREFIXES`` (comma-separated URL prefixes, e.g.
+``https://wengoagent.wengo.com/v1/links/``) lets URLs under those prefixes
+resolve to private/internal addresses. Matching compares the parsed scheme,
+hostname and port exactly and the path on segment boundaries; it is never a
+raw string ``startswith``, so ``https://trusted.host@evil/`` cannot match.
 """
 
 import ipaddress
 import asyncio
 import logging
+import os
 import socket
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
-from urllib.parse import urljoin, urlparse, urlunparse
+from functools import lru_cache
+from typing import AsyncIterator, NamedTuple, Optional
+from urllib.parse import unquote, urljoin, urlparse, urlsplit, urlunparse
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
+_TRUSTED_PREFIXES_ENV = "URL_FETCH_TRUSTED_PREFIXES"
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
 
 class SSRFFetchError(RuntimeError):
     """Raised when SSRF-safe fetching fails after validation succeeds."""
+
+
+class TrustedUrlPrefix(NamedTuple):
+    scheme: str
+    hostname: str
+    port: int
+    path: str
+
+
+def _has_dot_segment(path: str) -> bool:
+    """True if ``path`` could climb out of a prefix once a server decodes it.
+
+    Percent-decodes until stable (catches ``%2e%2e`` and double encoding),
+    treats ``\\`` as a separator, and ignores ``;params`` so ``..;`` counts.
+    """
+    for _ in range(5):
+        decoded = unquote(path)
+        if decoded == path:
+            break
+        path = decoded
+    for segment in path.replace("\\", "/").split("/"):
+        if segment.split(";", 1)[0] in (".", ".."):
+            return True
+    return False
+
+
+def _parse_trusted_prefix(raw: str) -> TrustedUrlPrefix:
+    parts = urlsplit(raw)
+    scheme = parts.scheme.lower()
+    error = f"Invalid {_TRUSTED_PREFIXES_ENV} entry {raw!r}"
+    if scheme not in _DEFAULT_PORTS:
+        raise ValueError(f"{error}: scheme must be http or https.")
+    if not parts.hostname:
+        raise ValueError(f"{error}: missing hostname.")
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(f"{error}: credentials are not allowed.")
+    if parts.query or parts.fragment:
+        raise ValueError(f"{error}: query strings and fragments are not allowed.")
+    try:
+        port = parts.port or _DEFAULT_PORTS[scheme]
+    except ValueError as exc:
+        raise ValueError(f"{error}: invalid port.") from exc
+    path = parts.path or "/"
+    if _has_dot_segment(path):
+        raise ValueError(f"{error}: path must not contain '.' or '..' segments.")
+    return TrustedUrlPrefix(scheme, parts.hostname, port, path)
+
+
+@lru_cache(maxsize=4)
+def _parse_trusted_prefixes(raw: str) -> tuple[TrustedUrlPrefix, ...]:
+    return tuple(
+        _parse_trusted_prefix(entry.strip())
+        for entry in raw.split(",")
+        if entry.strip()
+    )
+
+
+def get_trusted_url_prefixes() -> tuple[TrustedUrlPrefix, ...]:
+    """Return the parsed ``URL_FETCH_TRUSTED_PREFIXES``; raise ``ValueError`` if invalid."""
+    return _parse_trusted_prefixes(os.getenv(_TRUSTED_PREFIXES_ENV, ""))
+
+
+def is_trusted_url(url: str) -> bool:
+    """True if ``url`` falls under a configured ``URL_FETCH_TRUSTED_PREFIXES`` entry."""
+    prefixes = get_trusted_url_prefixes()
+    if not prefixes:
+        return False
+
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme not in _DEFAULT_PORTS or not parts.hostname:
+        return False
+    try:
+        port = parts.port or _DEFAULT_PORTS[scheme]
+    except ValueError:
+        return False
+    path = parts.path or "/"
+    if _has_dot_segment(path):
+        return False
+
+    for prefix in prefixes:
+        if (scheme, parts.hostname, port) != (
+            prefix.scheme,
+            prefix.hostname,
+            prefix.port,
+        ):
+            continue
+        boundary = prefix.path if prefix.path.endswith("/") else f"{prefix.path}/"
+        if path == prefix.path or path.startswith(boundary):
+            return True
+    return False
 
 
 def redact_url(url: str) -> str:
@@ -33,11 +135,15 @@ def redact_url(url: str) -> str:
     return f"{parsed_url.hostname}{path}"
 
 
-async def resolve_and_validate_host(hostname: str) -> list[str]:
+async def resolve_and_validate_host(
+    hostname: str, *, allow_private: bool = False
+) -> list[str]:
     """
     Resolve a hostname to IP addresses and validate none are private/internal.
 
     Uses getaddrinfo to handle both IPv4 and IPv6. Fails closed on DNS errors.
+    ``allow_private`` skips the private/internal checks (DNS must still resolve);
+    only pass it for URLs matched by ``URL_FETCH_TRUSTED_PREFIXES``.
 
     Returns:
         list[str]: Validated resolved IP address strings.
@@ -49,7 +155,12 @@ async def resolve_and_validate_host(hostname: str) -> list[str]:
         raise ValueError("Invalid URL: no hostname")
 
     # Block localhost variants
-    if hostname.lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+    if not allow_private and hostname.lower() in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "0.0.0.0",
+    ):
         raise ValueError("URLs pointing to localhost are not allowed")
 
     # Resolve hostname using getaddrinfo (handles both IPv4 and IPv6)
@@ -72,7 +183,7 @@ async def resolve_and_validate_host(hostname: str) -> list[str]:
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         ip_str = sockaddr[0]
         ip = ipaddress.ip_address(ip_str)
-        if not ip.is_global:
+        if not allow_private and not ip.is_global:
             raise ValueError(
                 f"URLs pointing to private/internal networks are not allowed: "
                 f"{hostname} resolves to {ip_str}"
@@ -88,6 +199,10 @@ async def validate_url_not_internal(url: str) -> list[str]:
     """
     Validate that a URL doesn't point to internal/private networks (SSRF protection).
 
+    URLs under a ``URL_FETCH_TRUSTED_PREFIXES`` entry may resolve to private
+    addresses. Called per redirect hop, so a trusted URL cannot redirect to an
+    untrusted internal one.
+
     Returns:
         list[str]: Validated resolved IP addresses for the hostname.
 
@@ -95,7 +210,13 @@ async def validate_url_not_internal(url: str) -> list[str]:
         ValueError: If URL points to localhost or private IP ranges.
     """
     parsed = urlparse(url)
-    return await resolve_and_validate_host(parsed.hostname)
+    allow_private = is_trusted_url(url)
+    if allow_private:
+        logger.info(
+            f"[ssrf] {redact_url(url)} matches {_TRUSTED_PREFIXES_ENV}; "
+            "private addresses allowed"
+        )
+    return await resolve_and_validate_host(parsed.hostname, allow_private=allow_private)
 
 
 def format_host_header(hostname: str, scheme: str, port: Optional[int]) -> str:
