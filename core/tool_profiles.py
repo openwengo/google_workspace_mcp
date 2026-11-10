@@ -10,10 +10,18 @@ from urllib.parse import urlsplit
 
 from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.http import StarletteWithLifespan
+from starlette.responses import PlainTextResponse
 from starlette.routing import Host, Route
+from starlette.websockets import WebSocketClose
 
 from auth.oauth_config import get_oauth_config
 from auth.machine_auth import compose_machine_auth, human_auth_provider
+from auth.portal_client import (
+    CLOUDFLARE_PORTAL_CALLBACK,
+    PortalSettings,
+    build_portal_client,
+    read_client_secret,
+)
 from auth.scopes import BASE_SCOPES
 from core.tool_registry import get_tool_components
 from core.tool_tier_loader import ToolTierLoader
@@ -42,6 +50,89 @@ class ToolProfile:
     services: tuple[str, ...]
     tools: tuple[str, ...]
     tier: str
+    portal: PortalSettings | None = None
+
+
+_HOSTNAME = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"
+)
+
+
+def _portal_settings(key: str, value) -> PortalSettings:
+    if not isinstance(value, dict):
+        raise ValueError(f"Tool profile {key!r}: portal must be an object")
+    unknown = set(value) - {
+        "edge_host",
+        "client_id",
+        "client_secret_ssm_parameter",
+        "redirect_uris",
+    }
+    if unknown:
+        raise ValueError(
+            f"Unknown settings in tool profile {key!r} portal: {sorted(unknown)}"
+        )
+    edge_host = value.get("edge_host")
+    if not isinstance(edge_host, str) or not _HOSTNAME.fullmatch(edge_host):
+        raise ValueError(
+            f"Tool profile {key!r}: portal.edge_host must be a lowercase hostname"
+        )
+    client_id = value.get("client_id")
+    if not isinstance(client_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", client_id
+    ):
+        raise ValueError(
+            f"Tool profile {key!r}: portal.client_id must be 1-128 letters, digits, '.', '_' or '-'"
+        )
+    parameter = value.get("client_secret_ssm_parameter")
+    if not isinstance(parameter, str) or not re.fullmatch(
+        r"[A-Za-z0-9_./-]{1,2048}", parameter
+    ):
+        raise ValueError(
+            f"Tool profile {key!r}: portal.client_secret_ssm_parameter must be an SSM parameter name"
+        )
+    redirect_uris = _string_list(
+        value.get("redirect_uris", [CLOUDFLARE_PORTAL_CALLBACK]),
+        f"{key}.portal.redirect_uris",
+    )
+    for uri in redirect_uris:
+        parsed = urlsplit(uri)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.fragment
+        ):
+            raise ValueError(
+                f"Tool profile {key!r}: portal.redirect_uris must be HTTPS URLs without credentials or fragment"
+            )
+    if not redirect_uris:
+        raise ValueError(f"Tool profile {key!r}: portal.redirect_uris is empty")
+    return PortalSettings(edge_host, client_id, parameter, redirect_uris)
+
+
+class PortalTokenEndpoint:
+    """A portal's edge hostname: POST /token of the profile app, nothing else.
+
+    Cloudflare's backend redeems codes and refresh tokens on that public name.
+    Everything else (/mcp, /authorize, /consent, /register, metadata) stays on
+    the profile's own hostname.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "POST"
+            and scope["path"] == "/token"
+        ):
+            await self.app(scope, receive, send)
+        elif scope["type"] == "websocket":
+            await WebSocketClose()(scope, receive, send)
+        else:
+            await PlainTextResponse("Not Found", status_code=404)(scope, receive, send)
 
 
 def _string_list(value, field: str) -> tuple[str, ...]:
@@ -72,7 +163,7 @@ def load_tool_profiles() -> list[ToolProfile]:
             raise ValueError(f"Invalid tool profile name: {key!r}")
         if not isinstance(entry, dict):
             raise ValueError(f"Tool profile {key!r} must be an object")
-        unknown = set(entry) - {"url", "name", "services", "tools", "tier"}
+        unknown = set(entry) - {"url", "name", "services", "tools", "tier", "portal"}
         if unknown:
             raise ValueError(
                 f"Unknown settings in tool profile {key!r}: {sorted(unknown)}"
@@ -123,6 +214,16 @@ def load_tool_profiles() -> list[ToolProfile]:
             raise ValueError(f"Tool profile {key!r} needs a non-empty name")
         if not services and not tools:
             raise ValueError(f"Tool profile {key!r} requires services or tools")
+        portal = None
+        if "portal" in entry:
+            portal = _portal_settings(key, entry["portal"])
+            if parsed.scheme != "https":
+                raise ValueError(f"Tool profile {key!r}: a portal needs an HTTPS url")
+            if portal.edge_host in hosts:
+                raise ValueError(
+                    f"Tool profile {key!r}: portal.edge_host must be a hostname of its own"
+                )
+            hosts.add(portal.edge_host)
         profiles.append(
             ToolProfile(
                 key,
@@ -133,6 +234,7 @@ def load_tool_profiles() -> list[ToolProfile]:
                 services,
                 tools,
                 tier,
+                portal,
             )
         )
     return profiles
@@ -223,9 +325,26 @@ def build_profile_http_app(source, default_app, **http_kwargs):
             raise ValueError(
                 f"Tool profile {profile.key!r} overlaps the OAuth callback path"
             )
+        if profile.portal is not None:
+            if profile.portal.edge_host in default_hosts:
+                raise ValueError(
+                    f"Tool profile {profile.key!r}: portal.edge_host must not be the full endpoint's hostname"
+                )
+            if profile.portal.client_id == config.client_id:
+                raise ValueError(
+                    f"Tool profile {profile.key!r}: portal.client_id must differ from the Google client id"
+                )
         selections.append((profile, select_profile_tools(profile, available)))
+    # Read every secret before building anything: a missing one stops the startup.
+    portal_secrets = {
+        profile.key: read_client_secret(profile.portal.client_secret_ssm_parameter)
+        for profile, _ in selections
+        if profile.portal is not None
+    }
 
     apps = [default_app]
+    # Portal edge hostnames come first: /health and every other route stay off them.
+    edge_routes = []
     routes = [Route("/health", health_check, methods=["GET"])]
     profile_servers = {}
     for profile, tools in selections:
@@ -240,6 +359,14 @@ def build_profile_http_app(source, default_app, **http_kwargs):
             jwt_signing_key=source_provider._jwt_signing_key,
             scopes=get_profile_scopes(tools),
         )
+        hosts = [profile.host]
+        if profile.portal is not None:
+            provider.portal_client = build_portal_client(
+                profile.portal,
+                portal_secrets[profile.key],
+                provider._default_scope_str,
+            )
+            hosts.append(profile.portal.edge_host)
         view = SecureFastMCP(
             name=profile.name,
             auth=compose_machine_auth(
@@ -252,7 +379,7 @@ def build_profile_http_app(source, default_app, **http_kwargs):
         child_kwargs = {
             **http_kwargs,
             "path": profile.path,
-            "allowed_hosts": [profile.host],
+            "allowed_hosts": hosts,
             "allowed_origins": [
                 *(http_kwargs.get("allowed_origins") or []),
                 profile.origin,
@@ -269,6 +396,20 @@ def build_profile_http_app(source, default_app, **http_kwargs):
             profile.path,
             len(tools),
         )
+        if profile.portal is not None:
+            edge_routes.append(
+                Host(
+                    profile.portal.edge_host,
+                    app=PortalTokenEndpoint(child),
+                    name=f"{profile.key}_portal",
+                )
+            )
+            logger.info(
+                "Tool profile %s: portal client %s, token endpoint https://%s/token",
+                profile.key,
+                profile.portal.client_id,
+                profile.portal.edge_host,
+            )
     routes.extend(Host(host, app=default_app) for host in sorted(default_hosts))
 
     @asynccontextmanager
@@ -278,7 +419,7 @@ def build_profile_http_app(source, default_app, **http_kwargs):
                 await stack.enter_async_context(child.router.lifespan_context(child))
             yield
 
-    app = StarletteWithLifespan(routes=routes, lifespan=lifespan)
+    app = StarletteWithLifespan(routes=[*edge_routes, *routes], lifespan=lifespan)
     app.state.path = getattr(default_app.state, "path", "/mcp")
     app.state.profile_servers = profile_servers
     return app

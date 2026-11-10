@@ -46,6 +46,7 @@ Without Helm, set `WORKSPACE_MCP_TOOL_PROFILES` to the JSON equivalent of the
 | `services` | Optional service groups from `core/tool_tiers.yaml`, e.g. `docs`, `sheets`, `gmail` |
 | `tier` | `core`, `extended`, or `complete` (default); tiers are cumulative |
 | `tools` | Optional additional exact tool names; can also define an entire profile without `services` |
+| `portal` | Optional Cloudflare MCP portal client; see [Cloudflare MCP portal](#cloudflare-mcp-portal) |
 
 At least one service or explicit tool is required. Profiles operate on tools
 already loaded by `--tools`, tiers, permissions, read-only mode, and the block
@@ -129,10 +130,57 @@ application consent/revocation boundaries.
 
 With profiles enabled, the full endpoint is routed on the configured public and
 internal base hostnames; unknown hosts return 404. `/health` remains available
-on any host for Kubernetes probes. Without profiles, existing routing is unchanged.
+on any host except portal edge hostnames, for Kubernetes probes. Without profiles, existing routing is unchanged.
 An alternative single-segment MCP path such as `/com` is supported, with matching
 OAuth resource metadata. Profiles on different paths of the same hostname are
 not supported by this configuration.
+
+## Cloudflare MCP portal
+
+A profile can also serve claude.ai through a Cloudflare MCP portal, which then
+acts as a confidential OAuth client of the profile (Terraform:
+`terraform-infra/modules/cloudflare_mcp_portal`):
+
+```yaml
+mcpProfiles:
+  gdocs:
+    name: Google Docs
+    url: https://google-workspace-gdocs-mcp.wengo.com/mcp
+    services: [docs]
+    portal:
+      edge_host: google-workspace-gdocs-mcp-edge.wengo.com
+      client_id: cloudflare-mcp-portal
+      client_secret_ssm_parameter: exploit.google_workspace_mcp.portal.gdocs
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `edge_host` | Public hostname of the profile's token endpoint, behind Cloudflare's edge gate Worker. It serves `POST /token` only: anything else, `/health` included, gets a 404 |
+| `client_id` | The portal's client id; must differ from the Google client id |
+| `client_secret_ssm_parameter` | SSM SecureString holding the client secret, read at startup with the pod's AWS credentials (IRSA, region from `AWS_REGION`). A missing or unreadable parameter stops the startup |
+| `redirect_uris` | Optional; defaults to Cloudflare's shared callback, `https://oauth-callbacks.cloudflareaccess.com/cdn-cgi/access/outbound-oauth-callback` |
+
+How the flow runs:
+
+- **The client.** The profile's authorization server answers the portal's
+  client id with a fixed client: `client_secret_basic`, the profile's scopes,
+  exactly the listed redirect URIs. It is never stored, and DCR can't take its
+  id.
+- **The browser stays on the profile hostname.** The portal sends the user to
+  the profile's own `/authorize` (`private_authorization_endpoint` in the
+  Terraform module), then consent and the Google callback. No new Google
+  redirect URI is needed.
+- **Codes and refresh tokens are redeemed on `https://<edge_host>/token`** by
+  Cloudflare's backend, with `Authorization: Basic`. The portal leaves
+  `client_id` out of the form, which the MCP SDK requires: the edge gate Worker
+  adds it once it has checked the secret.
+- **`/mcp` stays on the profile hostname,** which the portal reaches through
+  Cloudflare Gateway and a tunnel.
+- **Tokens are the profile's own:** same issuer, audience and storage namespace
+  as its other clients.
+
+Add `edge_host` to the ingress hosts. Deploy an image with this support before
+adding `portal`: older images refuse unknown profile settings at startup.
 
 ## Client setup and release
 

@@ -8,8 +8,17 @@ from mcp.shared.auth import OAuthClientInformationFull
 class ProfileGoogleProvider(GoogleProvider):
     """Apply the current scope limit to persisted and CIMD client registrations."""
 
+    # The profile's manually registered Cloudflare MCP portal, if any
+    # (auth/portal_client.py). It is configuration, never stored: DCR assigns
+    # random ids, so no registration can take its client_id.
+    portal_client: OAuthClientInformationFull | None = None
+
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        client = await super().get_client(client_id)
+        portal = self.portal_client
+        if portal is not None and client_id == portal.client_id:
+            client = portal
+        else:
+            client = await super().get_client(client_id)
         if client is None:
             return None
         # Registrations created before profile-specific scopes may contain the

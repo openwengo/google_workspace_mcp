@@ -156,6 +156,12 @@ mcpProfiles: {}
   #   services: [docs]
   #   tier: complete
   #   tools: [search_drive_files, get_drive_shareable_link, import_to_google_doc]
+  #   # Optional Cloudflare MCP portal client (docs/tool-profiles.md). Add
+  #   # edge_host to ingress.hosts; the pod's IRSA role must read the parameter.
+  #   portal:
+  #     edge_host: docs-mcp-edge.example.com
+  #     client_id: cloudflare-mcp-portal
+  #     client_secret_ssm_parameter: example.portal.docs
 
 # Single-user mode configuration
 singleUserMode: false
