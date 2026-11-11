@@ -1,0 +1,49 @@
+# cloudflared with its tunnel token read from SSM at startup, for the Cloudflare MCP portal
+# tunnel in front of this server's profiles (docs/tool-profiles.md, "portal"; deployed by
+# terraform-helm modules/cloudflared-mcp-portal).
+#
+# One container, no init container and no Kubernetes secret: scripts/cloudflared/entrypoint.py
+# reads the token with the pod's IRSA role, writes it to an in-memory file and execs
+# cloudflared with the container's arguments. Without TUNNEL_TOKEN_PARAMETER it runs
+# cloudflared as is.
+#
+#   docker build -f Dockerfile.cloudflared -t cloudflared-mcp-portal .
+#   docker run --rm cloudflared-mcp-portal version
+#
+# Jenkins builds it like Dockerfile.production, in its own ECR repository
+# (exploit/cloudflared-mcp-portal). To upgrade cloudflared, change CLOUDFLARED_VERSION.
+
+ARG CLOUDFLARED_VERSION=2026.10.7
+
+# Cloudflare's image, for its binary only (static, also on distroless Debian 13).
+FROM cloudflare/cloudflared:${CLOUDFLARED_VERSION} AS cloudflared
+
+# boto3 and its dependencies, pinned with hashes, for the runtime's Python (3.13).
+FROM python:3.13-slim-trixie AS deps
+COPY scripts/cloudflared/requirements.txt /tmp/requirements.txt
+RUN pip install \
+        --no-cache-dir \
+        --disable-pip-version-check \
+        --root-user-action=ignore \
+        --require-hashes \
+        --only-binary=:all: \
+        --target /opt/entrypoint-deps \
+        -r /tmp/requirements.txt
+
+
+FROM gcr.io/distroless/python3-debian13:nonroot
+
+ENV PYTHONPATH=/opt/entrypoint-deps \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    NO_AUTOUPDATE=true
+
+COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/cloudflared
+COPY --from=deps /opt/entrypoint-deps /opt/entrypoint-deps
+COPY scripts/cloudflared/entrypoint.py /opt/entrypoint.py
+
+# distroless "nonroot", also the owner of the token file.
+USER 65532:65532
+
+ENTRYPOINT ["/usr/bin/python3", "/opt/entrypoint.py"]
+CMD ["version"]

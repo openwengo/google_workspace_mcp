@@ -1,0 +1,4 @@
+# Dependencies of entrypoint.py in the cloudflared image (Dockerfile.cloudflared).
+# boto3 at the version of the app's uv.lock. Regenerate requirements.txt with:
+#   uv pip compile scripts/cloudflared/requirements.in --generate-hashes --python-version 3.13 -o scripts/cloudflared/requirements.txt
+boto3==1.43.99

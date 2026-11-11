@@ -182,6 +182,13 @@ How the flow runs:
 Add `edge_host` to the ingress hosts. Deploy an image with this support before
 adding `portal`: older images refuse unknown profile settings at startup.
 
+The tunnel's cloudflared runs from `Dockerfile.cloudflared`: Cloudflare's
+binary behind `scripts/cloudflared/entrypoint.py`, which reads the tunnel token
+from the SSM parameter in `TUNNEL_TOKEN_PARAMETER` (IRSA), writes it to
+`TUNNEL_TOKEN_FILE` (default `/run/cloudflared/token`, an in-memory volume) and
+execs cloudflared with the container's arguments. Deployed by
+`terraform-helm/modules/cloudflared-mcp-portal`.
+
 ## Client setup and release
 
 Create separate MCP connector entries using the specialized URLs. Select the
